@@ -1,6 +1,6 @@
 """Gestione automatica del flusso revisioni: import dati, scadenzario, liste di chiamata.
 
-Copyright (C) 2026 Pauserelax
+Copyright (C) 2026 Jean-François Rosé Yapi
 
 Questo programma è software libero sotto licenza GNU Affero General Public
 License v3.0 (AGPL-3.0). Vedi il file LICENSE nella radice del progetto.

@@ -74,7 +74,7 @@ python3 -m revisioni backup
 
 ## Licenza
 
-Copyright (C) 2026 Pauserelax
+Copyright (C) 2026 Jean-François Rosé Yapi
 
 Questo programma è software libero: puoi ridistribuirlo e/o modificarlo secondo
 i termini della **GNU Affero General Public License versione 3 (AGPL-3.0)**
