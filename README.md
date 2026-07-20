@@ -74,4 +74,16 @@ python3 -m revisioni backup
 
 ## Licenza
 
-Uso interno. Codice condivisibile; i dati dei clienti restano privati.
+Copyright (C) 2026 Pauserelax
+
+Questo programma è software libero: puoi ridistribuirlo e/o modificarlo secondo
+i termini della **GNU Affero General Public License versione 3 (AGPL-3.0)**
+come pubblicata dalla Free Software Foundation. Vedi il file [LICENSE](LICENSE).
+
+In pratica: sei libero di usarlo, studiarlo e modificarlo, ma ogni versione
+modificata — anche se offerta come servizio online — deve restare open source
+sotto la stessa licenza e mantenere questa attribuzione. I dati dei clienti non
+fanno parte del progetto e restano privati.
+
+Il programma è distribuito nella speranza che sia utile, ma SENZA ALCUNA
+GARANZIA, nei limiti consentiti dalla legge applicabile.
