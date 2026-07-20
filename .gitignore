@@ -1,0 +1,31 @@
+# ---- DATI REALI: mai su GitHub (privacy clienti) ----
+dati/
+liste/
+import/
+build/
+*.db
+*.db-*
+*.sqlite
+
+# File Excel/CSV/archivi di lavoro (contengono dati personali reali)
+*.xlsx
+*.xls
+*.csv
+*.zip
+
+# Cartelle degli import reali
+TAGLIANDI_REVISIONI/
+immatricolazioni/
+
+# Artefatti dello scraper Tcar (non parte di questo progetto)
+tcar_*.pyc
+*.cpython-*.pyc
+
+# ---- Sistema / Python ----
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+venv/
+build-python-embed/
+python-embed.zip
