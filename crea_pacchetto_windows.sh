@@ -99,7 +99,8 @@ Il primo avvio dalla rete puo' richiedere qualche secondo in piu'.
 BACKUP: a ogni avvio viene salvata una copia del database in dati\backup
 (una al giorno, tiene le ultime 30).
 
-AGGIORNAMENTI del programma: sostituire SOLO la cartella "app" con quella nuova.
+AGGIORNAMENTI del programma: estrarre lo zip di aggiornamento DENTRO la
+cartella GestioneRevisioni sovrascrivendo (rimpiazza "app" e le librerie).
 I dati non vengono toccati e si adeguano da soli al primo avvio.
 EOF
 
@@ -108,7 +109,9 @@ echo "$VERSIONE" > "$BUILD/app/VERSIONE.txt"
 
 echo "— Creo gli archivi…"
 (cd build && zip -qr "GestioneRevisioni_win64_$VERSIONE.zip" GestioneRevisioni)
-(cd "$BUILD" && zip -qr "../aggiornamento_app_$VERSIONE.zip" app)
+# L'aggiornamento porta anche le librerie (site-packages) così app e
+# dipendenze restano sempre allineate: si estrae sulla cartella sovrascrivendo.
+(cd "$BUILD" && zip -qr "../aggiornamento_app_$VERSIONE.zip" app python/Lib/site-packages)
 
 echo ""
 echo "Pacchetto completo:  build/GestioneRevisioni_win64_$VERSIONE.zip  (primo invio)"
