@@ -46,8 +46,10 @@ PAGINA = """<!DOCTYPE html>
   tr.SCADUTA td:first-child { border-left: 4px solid #cc4125; }
   tr.IN_SCADENZA td:first-child { border-left: 4px solid #e8b400; }
   tr.PROSSIMA td:first-child { border-left: 4px solid #6aa84f; }
+  tr.DATI_MANCANTI td:first-child { border-left: 4px solid #9aa4b2; }
   .stato { font-weight: 700; font-size: 11px; }
   .SCADUTA .stato { color: #cc4125; } .IN_SCADENZA .stato { color: #9c7b00; } .PROSSIMA .stato { color: #38761d; }
+  .DATI_MANCANTI .stato { color: #5b6673; }
   .azioni { display: flex; gap: 4px; flex-wrap: wrap; }
   .azioni button { border: 1px solid #ccc; background: #fff; border-radius: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
   .azioni button:hover { background: #eef2f8; }
@@ -61,6 +63,22 @@ PAGINA = """<!DOCTYPE html>
   .cliente-card { background: #fff; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
   .muted { color: #777; font-size: 12px; }
   #note-conteggio { color: #555; font-size: 13px; margin: 8px 0; }
+  .kpi-griglia { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .kpi { background: #fff; border-radius: 8px; padding: 12px 18px; box-shadow: 0 1px 3px rgba(0,0,0,.08); min-width: 150px; }
+  .kpi b { display: block; font-size: 26px; margin-top: 2px; }
+  .kpi .muted { font-size: 12px; }
+  .grafico-card { background: #fff; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+  .grafico-card h3 { margin: 0 0 2px; font-size: 15px; }
+  .grafico { display: flex; align-items: flex-end; gap: 2px; height: 150px; margin-top: 14px; }
+  .colonna { flex: 1; min-width: 3px; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; height: 100%; cursor: default; }
+  .colonna div:first-child { border-radius: 4px 4px 0 0; }
+  .seg-nostri { background: #2a78d6; }
+  .seg-esterni { background: #eb6834; }
+  .colonna:hover div { filter: brightness(1.15); }
+  .mesi { display: flex; gap: 2px; margin-top: 4px; }
+  .mesi span { flex: 1; min-width: 3px; font-size: 10px; color: #777; text-align: left; overflow: visible; white-space: nowrap; }
+  .legenda { display: flex; gap: 16px; font-size: 12px; color: #555; margin-top: 10px; }
+  .legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 </style>
 </head>
 <body>
@@ -69,12 +87,13 @@ PAGINA = """<!DOCTYPE html>
   <span class="chip">⏰ Scadono questo mese <b id="k-mese">–</b></span>
   <span class="chip">📞 Chiamate (+1 mese) <b id="k-chiamate">–</b></span>
   <span class="chip">✉️ SMS da inviare (+2 mesi) <b id="k-sms">–</b></span>
-  <span class="chip">🗂 Arretrato <b id="k-arretrato">–</b></span>
+  <span class="chip">🧊 Cold (mai contattati) <b id="k-cold">–</b></span>
+  <span class="chip">📇 Dati mancanti <b id="k-dati">–</b></span>
   <span class="chip">🔄 Da recuperare <b id="k-recupero">–</b></span>
   <span class="chip">🎯 Lead Tcar <b id="k-lead">–</b></span>
   <span style="margin-left:auto">
     <button id="btn-aggiorna" style="border:none;border-radius:8px;padding:8px 14px;cursor:pointer;background:#e8b400;color:#1c1e21;font-weight:600" onclick="document.getElementById('file-aggiorna').click()">⬆️ Aggiorna dati</button>
-    <input type="file" id="file-aggiorna" multiple accept=".xlsx,.xls" style="display:none">
+    <input type="file" id="file-aggiorna" multiple accept=".xlsx,.xls,.pdf" style="display:none">
   </span>
 </header>
 <nav>
@@ -82,6 +101,7 @@ PAGINA = """<!DOCTYPE html>
   <button data-tab="recupero">🔄 Da recuperare</button>
   <button data-tab="cerca">🔍 Cerca cliente</button>
   <button data-tab="invii">📤 Invii</button>
+  <button data-tab="stat">📊 Statistiche</button>
   <button data-tab="filtri">⚙️ Filtri</button>
 </nav>
 <main>
@@ -90,7 +110,9 @@ PAGINA = """<!DOCTYPE html>
       <button data-f="MESE_CORRENTE" class="attivo">⏰ Scadono questo mese</button>
       <button data-f="CHIAMATA">📞 Da chiamare (+1 mese)</button>
       <button data-f="SMS">✉️ SMS (+2 mesi)</button>
-      <button data-f="ARRETRATO">🗂 Arretrato</button>
+      <button data-f="COLD">🧊 Cold (mai contattati)</button>
+      <button data-f="RISCALDA">♻️ Riscalda clienti</button>
+      <button data-f="DATI">📇 Dati mancanti</button>
       <button data-f="LEAD">🎯 Con lead Tcar</button>
       <label style="font-size:13px">📅 Vai al mese: <input type="month" id="mese-futuro"></label>
       <input type="search" id="cerca-chiamate" placeholder="Filtra per nome, targa, telaio…">
@@ -159,6 +181,29 @@ PAGINA = """<!DOCTYPE html>
     <div class="filtri"><input type="search" id="cerca-cliente" placeholder="Nome, telefono, targa o telaio… (min 3 caratteri)"></div>
     <div id="risultati-cerca"></div>
   </section>
+  <section id="tab-stat" style="display:none">
+    <div id="stat-vuoto" class="muted" style="display:none">Nessun dato della linea revisioni: importa l'export PDF del portale Dekra con "⬆️ Aggiorna dati" (o da terminale: importa-dekra).</div>
+    <div id="stat-contenuto" style="display:none">
+      <div class="kpi-griglia" id="stat-kpi"></div>
+      <div class="grafico-card">
+        <h3>Revisioni fatte in linea, mese per mese</h3>
+        <div class="muted" id="stat-mensile-nota"></div>
+        <div class="grafico" id="graf-mensile"></div>
+        <div class="mesi" id="mesi-mensile"></div>
+        <div class="legenda"><span><i style="background:#2a78d6"></i>Parco nostro</span><span><i style="background:#eb6834"></i>Veicoli esterni</span></div>
+      </div>
+      <div class="grafico-card">
+        <h3>Potenziale ritorni nei prossimi 12 mesi</h3>
+        <div class="muted">Targhe già passate da noi la cui prossima revisione (ultima REGOLARE + 2 anni) cade nel mese indicato.</div>
+        <div class="grafico" id="graf-potenziale"></div>
+        <div class="mesi" id="mesi-potenziale"></div>
+        <div class="legenda"><span><i style="background:#2a78d6"></i>Parco nostro</span><span><i style="background:#eb6834"></i>Veicoli esterni</span></div>
+      </div>
+      <details class="grafico-card"><summary style="cursor:pointer;font-size:14px">📋 Dati in tabella</summary>
+        <table id="stat-tabella" style="margin-top:10px;box-shadow:none"><thead><tr><th>Mese</th><th>Revisioni fatte</th><th>di cui parco nostro</th><th>di cui esterni</th></tr></thead><tbody></tbody></table>
+      </details>
+    </div>
+  </section>
 </main>
 <script>
 let CHIAMATE = [], FILTRO = 'MESE_CORRENTE', MESE = '', SELEZIONE = new Set();
@@ -176,7 +221,8 @@ async function carica() {
   document.getElementById('k-sms').textContent = r.sms;
   document.getElementById('k-chiamate').textContent = r.chiamate;
   document.getElementById('k-mese').textContent = r.mese_corrente;
-  document.getElementById('k-arretrato').textContent = r.arretrato;
+  document.getElementById('k-cold').textContent = r.cold;
+  document.getElementById('k-dati').textContent = r.dati_mancanti;
   document.getElementById('k-recupero').textContent = r.da_recuperare;
   document.getElementById('k-lead').textContent = r.lead;
   await caricaChiamate();
@@ -265,20 +311,28 @@ async function segnaSms(arretrato) {
 function mostraChiamate() {
   const q = document.getElementById('cerca-chiamate').value.toLowerCase();
   document.getElementById('strumenti-sms').style.display = FILTRO === 'SMS' ? '' : 'none';
-  document.getElementById('strumenti-arretrato').style.display = FILTRO === 'ARRETRATO' ? '' : 'none';
-  let sel = MESE ? CHIAMATE : CHIAMATE.filter(c => FILTRO === 'LEAD' ? c.lead : c.fase === FILTRO);
+  document.getElementById('strumenti-arretrato').style.display = (FILTRO === 'COLD' || FILTRO === 'RISCALDA') ? '' : 'none';
+  let sel = MESE ? CHIAMATE.filter(c => c.fase !== 'DATI_MANCANTI') : CHIAMATE.filter(c =>
+    FILTRO === 'LEAD' ? c.lead :
+    FILTRO === 'COLD' ? (c.fase === 'ARRETRATO' && c.mai_contattato) :
+    FILTRO === 'RISCALDA' ? c.fase === 'ARRETRATO' :
+    FILTRO === 'DATI' ? c.fase === 'DATI_MANCANTI' :
+    c.fase === FILTRO);
   if (q) sel = sel.filter(c => (c.cliente + c.targa + c.telaio + c.telefono).toLowerCase().includes(q));
   const clientiUnici = new Set(sel.map(c => c.cliente)).size;
   document.getElementById('note-conteggio').textContent =
     (MESE ? 'Scadenze di ' + MESE + ': ' : '') + sel.length + ' veicoli di ' + clientiUnici + ' clienti' +
-    (sel.length > 400 ? ' (mostro i primi 400)' : '');
+    (sel.length > 400 ? ' (mostro i primi 400)' : '') +
+    (FILTRO === 'DATI' && !MESE ? " — manca la data: chiedi al cliente quando ha fatto l'ultima revisione e premi \\"Revisione fatta\\", il veicolo entra in scadenzario" : '') +
+    (FILTRO === 'COLD' && !MESE ? ' — scadenza superata e mai contattati finora' : '') +
+    (FILTRO === 'RISCALDA' && !MESE ? ' — scaduti da tempo: revisione probabilmente fatta altrove o auto cambiata. Seleziona e metti in coda SMS/Brevo, oppure chiama: se ha cambiato auto usa "Auto venduta" e registra la nuova' : '');
   const tb = document.querySelector('#tabella-chiamate tbody');
   tb.innerHTML = sel.slice(0, 400).map(c => `
     <tr class="${c.stato}">
       <td><input type="checkbox" ${SELEZIONE.has(c.veicolo_id) ? 'checked' : ''} onchange="toggleSel(${c.veicolo_id}, this.checked)"></td>
       <td><span class="stato">${c.stato.replace('_',' ')}</span>
           ${c.in_coda ? c.in_coda.map(k => '<div><span class="badge b-lead">📤 coda ' + k + '</span></div>').join('') : ''}</td>
-      <td>${c.scadenza}<div class="muted">${c.giorni >= 0 ? 'tra ' + c.giorni + ' gg' : Math.abs(c.giorni) + ' gg fa'}</div></td>
+      <td>${c.scadenza || '<span class="muted">da scoprire</span>'}<div class="muted">${c.giorni === null || c.giorni === undefined ? '' : c.giorni >= 0 ? 'tra ' + c.giorni + ' gg' : Math.abs(c.giorni) + ' gg fa'}</div></td>
       <td>${c.immatricolazione || '—'}${c.fonte_data === 'presunta' ? '<div class="muted">presunta</div>' : ''}
           ${c.ultima_revisione ? '<div class="muted">ult. rev. ' + c.ultima_revisione + '</div>' : ''}</td>
       <td><b>${esc(c.cliente)}</b></td>
@@ -290,6 +344,8 @@ function mostraChiamate() {
           ${c.fonte_file ? '<div class="muted">📄 ' + esc(c.fonte_file) + '</div>' : ''}</td>
       <td>${c.lead ? '<span class="badge b-lead">LEAD TCAR</span>' : ''}
           ${c.avviso ? '<span class="badge b-avviso">cambio auto?</span>' : ''}
+          ${c.fase === 'ARRETRATO' ? '<span class="badge b-avviso">♻️ possibile nuovo veicolo</span>' : ''}
+          ${FILTRO === 'RISCALDA' && !c.ha_email ? '<span class="badge b-tel">senza email</span>' : ''}
           ${c.ultimo_esito ? '<span class="badge b-esito">' + esc(c.ultimo_esito) + '</span>' : ''}</td>
       <td><div class="azioni">
         <button onclick="segnaEsito(${c.veicolo_id}, 'contattato')">Contattato</button>
@@ -449,13 +505,57 @@ document.getElementById('cerca-cliente').addEventListener('input', e => {
   }, 300);
 });
 
+const MESI_IT = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+function etichettaMese(iso) { return MESI_IT[parseInt(iso.slice(5,7),10)-1] + " '" + iso.slice(2,4); }
+
+function disegnaBarre(serie, idGrafico, idMesi, passo) {
+  const max = Math.max(1, ...serie.map(x => x.nostri + x.esterni));
+  document.getElementById(idGrafico).innerHTML = serie.map(x => {
+    const tot = x.nostri + x.esterni;
+    let seg = '';
+    if (x.esterni) seg += '<div class="seg-esterni" style="height:' + Math.max(1, Math.round(x.esterni / max * 100)) + '%"></div>';
+    if (x.nostri) seg += '<div class="seg-nostri" style="height:' + Math.max(1, Math.round(x.nostri / max * 100)) + '%"></div>';
+    return '<div class="colonna" title="' + etichettaMese(x.mese) + ' — ' + tot + ' revisioni: ' +
+           x.nostri + ' parco nostro, ' + x.esterni + ' esterni">' + seg + '</div>';
+  }).join('');
+  document.getElementById(idMesi).innerHTML = serie.map((x, i) =>
+    '<span>' + (i % passo === 0 ? etichettaMese(x.mese) : '') + '</span>').join('');
+}
+
+async function caricaStat() {
+  const r = await api('/api/dekra');
+  document.getElementById('stat-vuoto').style.display = r.vuoto ? '' : 'none';
+  document.getElementById('stat-contenuto').style.display = r.vuoto ? 'none' : '';
+  if (r.vuoto) return;
+  const it = d => d.slice(8,10) + '/' + d.slice(5,7) + '/' + d.slice(0,4);
+  const pctNostri = Math.round(r.passaggi_nostri / r.passaggi * 100);
+  const ultimi12 = r.mensile.slice(-13, -1);
+  const media12 = ultimi12.length ? Math.round(ultimi12.reduce((s, x) => s + x.nostri + x.esterni, 0) / ultimi12.length) : 0;
+  const arretrati = r.arretrato.nostri + r.arretrato.esterni;
+  document.getElementById('stat-kpi').innerHTML = `
+    <div class="kpi"><span class="muted">Revisioni fatte in linea</span><b>${r.passaggi}</b><span class="muted">dal ${it(r.dal)} al ${it(r.al)}</span></div>
+    <div class="kpi"><span class="muted">Veicoli distinti passati</span><b>${r.targhe}</b><span class="muted">media ${media12} revisioni/mese (ultimi 12)</span></div>
+    <div class="kpi"><span class="muted">Dal nostro parco clienti</span><b>${r.passaggi_nostri} <small style="font-size:14px">(${pctNostri}%)</small></b><span class="muted">${r.targhe_nostre} veicoli</span></div>
+    <div class="kpi"><span class="muted">Da fuori (solo revisione)</span><b>${r.passaggi_esterni} <small style="font-size:14px">(${100 - pctNostri}%)</small></b><span class="muted">${r.targhe_esterne} veicoli: candidati tagliandi</span></div>
+    <div class="kpi"><span class="muted">Clienti fidelizzati</span><b>${r.fidelizzate}</b><span class="muted">targhe con 2+ revisioni da noi</span></div>
+    <div class="kpi"><span class="muted">Non tornati (scaduti)</span><b>${arretrati}</b><span class="muted">${r.arretrato.nostri} parco nostro, ${r.arretrato.esterni} esterni: da richiamare</span></div>`;
+  document.getElementById('stat-mensile-nota').textContent =
+    'Ogni passaggio in linea documentato dal portale Dekra (esiti REGOLARI e non).';
+  disegnaBarre(r.mensile, 'graf-mensile', 'mesi-mensile', 4);
+  disegnaBarre(r.potenziale, 'graf-potenziale', 'mesi-potenziale', 2);
+  document.querySelector('#stat-tabella tbody').innerHTML = r.mensile.map(x =>
+    '<tr><td>' + etichettaMese(x.mese) + '</td><td>' + (x.nostri + x.esterni) + '</td><td>' +
+    x.nostri + '</td><td>' + x.esterni + '</td></tr>').join('');
+}
+
 document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.remove('attivo'));
   b.classList.add('attivo');
-  ['chiamate','recupero','cerca','invii','filtri'].forEach(t => document.getElementById('tab-' + t).style.display = (t === b.dataset.tab ? '' : 'none'));
+  ['chiamate','recupero','cerca','invii','stat','filtri'].forEach(t => document.getElementById('tab-' + t).style.display = (t === b.dataset.tab ? '' : 'none'));
   if (b.dataset.tab === 'recupero') caricaRecupero();
   if (b.dataset.tab === 'filtri') caricaFiltri();
   if (b.dataset.tab === 'invii') caricaInvii();
+  if (b.dataset.tab === 'stat') caricaStat();
 }));
 document.querySelectorAll('.filtri button[data-f]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.filtri button[data-f]').forEach(x => x.classList.remove('attivo'));
@@ -508,6 +608,31 @@ def crea_handler(percorso_db: Path):
             cache["recupero"] = database.clienti_senza_veicolo(conn_condivisa)
         return cache["recupero"]
 
+    def dati_mancanti_cache():
+        # Veicoli fuori gestione senza data: in lista solo se chiamabili.
+        if "dati_mancanti" not in cache:
+            from .telefoni import valuta_campo
+            righe = []
+            for r in database.veicoli_dati_mancanti(conn_condivisa):
+                stato_tel, _, motivo = valuta_campo(r["telefono"] or "")
+                if stato_tel not in ("cellulare", "fisso"):
+                    continue
+                righe.append({
+                    "veicolo_id": r["veicolo_id"], "stato": "DATI_MANCANTI", "fase": "DATI_MANCANTI",
+                    "scadenza": "", "immatricolazione": "", "fonte_data": "",
+                    "ultima_revisione": "", "giorni": None,
+                    "cliente": r["cliente"], "telefono": r["telefono"] or "",
+                    "targa": r["targa"] or "", "telaio": r["telaio"] or "",
+                    "marca": r["marca"] or "", "modello": r["modello"] or "",
+                    "lead": "", "avviso": "", "ultimo_esito": "",
+                    "telefono_stato": stato_tel, "telefono_motivo": motivo,
+                    "fonte_file": r["file_origine"] or "", "in_coda": [],
+                    "mai_contattato": True,
+                })
+            righe.sort(key=lambda x: (x["telefono_stato"] != "cellulare", x["cliente"]))
+            cache["dati_mancanti"] = righe
+        return cache["dati_mancanti"]
+
     def invalida():
         cache.clear()
 
@@ -539,7 +664,8 @@ def crea_handler(percorso_db: Path):
                             "sms": sum(1 for s in lista if s.fase == "SMS" and s.ultimo_esito != "sms_inviato"),
                             "chiamate": sum(1 for s in lista if s.fase == "CHIAMATA"),
                             "mese_corrente": sum(1 for s in lista if s.fase == "MESE_CORRENTE"),
-                            "arretrato": sum(1 for s in lista if s.fase == "ARRETRATO"),
+                            "cold": sum(1 for s in lista if s.fase == "ARRETRATO" and s.mai_contattato),
+                            "dati_mancanti": len(dati_mancanti_cache()),
                             "da_recuperare": len(recupero_cache()),
                             "lead": lead,
                         })
@@ -570,7 +696,9 @@ def crea_handler(percorso_db: Path):
                             "telefono_stato": s.telefono_stato, "telefono_motivo": s.telefono_motivo,
                             "fonte_file": s.fonte_file,
                             "in_coda": in_coda.get(s.veicolo_id, []),
-                        } for s in lista]})
+                            "mai_contattato": s.mai_contattato,
+                            "ha_email": bool(s.email),
+                        } for s in lista] + ([] if mese else dati_mancanti_cache())})
                     elif url.path == "/api/sms.xlsx":
                         from .sms import (TESTO_ARRETRATO_PREDEFINITO, TESTO_PREDEFINITO,
                                           _testo_template, crea_excel_smscafe, lista_sms)
@@ -705,6 +833,8 @@ def crea_handler(percorso_db: Path):
                             "doppioni": database.trova_doppioni_veicoli(conn)[:80],
                             "varianti": database.gruppi_varianti_flotta(conn)[:60],
                         })
+                    elif url.path == "/api/dekra":
+                        _json(self, database.statistiche_dekra(conn))
                     elif url.path == "/api/cerca":
                         q = parse_qs(url.query).get("q", [""])[0].strip()
                         _json(self, {"clienti": self._cerca(conn, q, scadenze_cache(True))})
@@ -831,8 +961,8 @@ def crea_handler(percorso_db: Path):
         def _aggiorna(self, conn, dati, invalida_cache):
             import base64
             nome = Path(dati.get("nome", "file.xlsx")).name
-            if not nome.lower().endswith((".xlsx", ".xls")):
-                return _json(self, {"errore": "sono accettati solo file Excel (.xlsx/.xls)"}, 400)
+            if not nome.lower().endswith((".xlsx", ".xls", ".pdf")):
+                return _json(self, {"errore": "sono accettati file Excel (.xlsx/.xls) o il PDF del portale Dekra"}, 400)
             cartella = percorso_db.parent.parent / "import"
             cartella.mkdir(parents=True, exist_ok=True)
             percorso = cartella / nome
@@ -840,7 +970,16 @@ def crea_handler(percorso_db: Path):
 
             maiuscolo = nome.upper()
             try:
-                if "ESTRAZIONELEADS" in maiuscolo.replace(" ", ""):
+                if nome.lower().endswith(".pdf"):
+                    from .parser_dekra import leggi_pdf_dekra
+                    righe = leggi_pdf_dekra(percorso)
+                    if not righe:
+                        return _json(self, {"errore": "il PDF non sembra un export del portale Dekra"}, 400)
+                    esito = database.importa_dekra(conn, righe, nome)
+                    dettaglio = (f"Dekra: {esito['righe']} passaggi letti, {esito['nuove']} nuovi, "
+                                 f"{esito['revisioni']} revisioni aggiunte allo storico, "
+                                 f"{esito['non_agganciate']} di veicoli esterni")
+                elif "ESTRAZIONELEADS" in maiuscolo.replace(" ", ""):
                     from .parser_tcar import leggi_export_lead
                     leads = leggi_export_lead(percorso)
                     esito = database.importa_lead_tcar(conn, leads, nome)

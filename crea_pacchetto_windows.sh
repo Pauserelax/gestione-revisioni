@@ -33,7 +33,7 @@ Lib/site-packages
 EOF
 
 echo "— Installo le librerie (pure-Python, compatibili Windows)…"
-python3 -m pip install --quiet --target "$BUILD/python/Lib/site-packages" openpyxl xlrd
+python3 -m pip install --quiet --target "$BUILD/python/Lib/site-packages" openpyxl xlrd pypdf
 
 echo "— Controllo di integrità della dashboard…"
 python3 - << 'EOF'

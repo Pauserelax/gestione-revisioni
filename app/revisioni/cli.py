@@ -127,6 +127,44 @@ def cmd_importa_immatricolazioni(args) -> None:
         print(f"Date 'stimate' residue azzerate: {stimate} (meglio nessuna data che una sbagliata).")
 
 
+def cmd_importa_dekra(args) -> None:
+    from .parser_dekra import leggi_pdf_dekra, trova_file_dekra
+    percorso = Path(args.percorso)
+    if not percorso.exists():
+        sys.exit(f"Percorso non trovato: {percorso}")
+    files = trova_file_dekra(percorso) if percorso.is_dir() else [percorso]
+    if not files:
+        sys.exit("Nessun file .pdf trovato.")
+    conn = database.apri_db(Path(args.db))
+    totali = {"righe": 0, "nuove": 0, "doppie": 0, "revisioni": 0}
+    esito = None
+    for i, f in enumerate(files, 1):
+        try:
+            righe = leggi_pdf_dekra(f)
+        except ImportError:
+            sys.exit("Manca una libreria PDF (pypdf o pdfplumber): installala con  python -m pip install pypdf")
+        if not righe:
+            print(f"[{i}/{len(files)}] {f.name}: nessuna riga riconosciuta, saltato")
+            continue
+        esito = database.importa_dekra(conn, righe, f.name)
+        for k in totali:
+            totali[k] += esito[k]
+        print(f"[{i}/{len(files)}] {f.name}: {esito['righe']} passaggi letti, "
+              f"{esito['nuove']} nuovi, {esito['doppie']} già presenti")
+    if esito is None:
+        sys.exit("Nessun PDF Dekra riconosciuto.")
+    print("\n=== TOTALE DEKRA ===")
+    print(f"Passaggi in linea: {totali['righe']} letti, {totali['nuove']} nuovi registrati")
+    print(f"Revisioni REGOLARI aggiunte allo storico veicoli: {totali['revisioni']}")
+    print(f"Passaggi agganciati al parco: righe con veicolo nostro {esito['match']}, "
+          f"riagganci di vecchi orfani {esito['riagganciate']}")
+    print(f"Targhe/telai completati sui veicoli: {esito['targhe_aggiunte']}/{esito['telai_aggiunti']}")
+    print(f"Passaggi NON agganciati (veicolo fuori parco): {esito['non_agganciate']}")
+    print(f"Clienti abituali della linea (2+ passaggi): {esito['abituali']} targhe")
+    if esito["ripristinati"]:
+        print(f"Veicoli archiviati tornati in gestione (ora hanno dati validi): {esito['ripristinati']}")
+
+
 def cmd_importa_tcar(args) -> None:
     percorso = Path(args.file)
     if not percorso.exists():
@@ -556,6 +594,10 @@ def main(argv=None) -> None:
     p = sub.add_parser("importa-immatricolazioni", help="Importa il registro immatricolazioni del collega (date autorevoli)")
     p.add_argument("percorso", help="Cartella (ricorsiva) o file singolo")
     p.set_defaults(func=cmd_importa_immatricolazioni)
+
+    p = sub.add_parser("importa-dekra", help="Importa l'export PDF del portale Dekra (revisioni fatte in officina)")
+    p.add_argument("percorso", help="File PDF o cartella")
+    p.set_defaults(func=cmd_importa_dekra)
 
     p = sub.add_parser("importa-tcar", help="Importa un export lead di Tcar (EstrazioneLeads*.xlsx)")
     p.add_argument("file")

@@ -40,6 +40,8 @@ class ScadenzaVeicolo:
     telefono_stato: str = ""   # cellulare | fisso | sospetto | non_valido | mancante
     telefono_motivo: str = ""
     fonte_file: str = ""       # ultimo file di import che ha fornito/aggiornato il veicolo
+    mai_contattato: bool = False  # nessun contatto registrato, mai (lista "cold")
+    email: str = ""
 
 
 def fine_mese(anno: int, mese: int) -> date:
@@ -84,7 +86,7 @@ def calcola_scadenze(conn: sqlite3.Connection, oggi: date | None = None, giorni_
     query = """
         SELECT v.id, v.telaio, v.targa, v.marca, v.modello, v.punto_vendita,
                v.data_immatricolazione, v.fonte_data, v.cliente_id, v.file_origine,
-               c.nome AS cliente, c.telefono,
+               c.nome AS cliente, c.telefono, c.email,
                (SELECT MAX(data_revisione) FROM revisioni_effettuate r WHERE r.veicolo_id = v.id) AS ultima_revisione,
                (SELECT campagna FROM lead_tcar l WHERE l.veicolo_id = v.id ORDER BY creazione DESC LIMIT 1) AS lead_tcar
         FROM veicoli v JOIN clienti c ON c.id = v.cliente_id
@@ -106,8 +108,10 @@ def calcola_scadenze(conn: sqlite3.Connection, oggi: date | None = None, giorni_
     }
     # Ultimo esito per (veicolo, scadenza) in una sola query.
     ultimo_esito: dict[tuple[int, str], str] = {}
+    contattati: set[int] = set()
     for k in conn.execute("SELECT veicolo_id, scadenza, esito FROM contatti ORDER BY data_contatto"):
         ultimo_esito[(k["veicolo_id"], k["scadenza"])] = k["esito"]
+        contattati.add(k["veicolo_id"])
 
     risultati: list[ScadenzaVeicolo] = []
     for row in conn.execute(query):
@@ -149,6 +153,8 @@ def calcola_scadenze(conn: sqlite3.Connection, oggi: date | None = None, giorni_
             telefono_stato=(tel_stato := valuta_campo(row["telefono"] or ""))[0],
             telefono_motivo=tel_stato[2],
             fonte_file=row["file_origine"] or "",
+            mai_contattato=row["id"] not in contattati,
+            email=row["email"] or "",
         ))
     ordine = {"SCADUTA": 0, "IN_SCADENZA": 1, "PROSSIMA": 2, "FUTURA": 3, "DATA_MANCANTE": 4}
     risultati.sort(key=lambda s: (ordine[s.stato], s.scadenza or date.max, s.cliente))

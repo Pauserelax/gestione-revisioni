@@ -7,11 +7,12 @@ build/
 *.db-*
 *.sqlite
 
-# File Excel/CSV/archivi di lavoro (contengono dati personali reali)
+# File Excel/CSV/PDF/archivi di lavoro (contengono dati personali reali)
 *.xlsx
 *.xls
 *.csv
 *.zip
+*.pdf
 
 # Cartelle degli import reali
 TAGLIANDI_REVISIONI/

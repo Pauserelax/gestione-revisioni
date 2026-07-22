@@ -52,6 +52,26 @@ CREATE TABLE IF NOT EXISTS revisioni_effettuate (
     fonte TEXT
 );
 
+-- Passaggi in linea revisione dal portale Dekra: prova che la revisione è
+-- stata fatta DA NOI. veicolo_id agganciato quando telaio/targa è nel parco.
+CREATE TABLE IF NOT EXISTS revisioni_dekra (
+    id INTEGER PRIMARY KEY,
+    targa TEXT NOT NULL,
+    telaio TEXT,
+    categoria TEXT,                  -- M1 | N1 | M1G | N1G
+    tipo_operazione TEXT,            -- REV = revisione; altri codici = altre pratiche
+    esito TEXT,                      -- REGOLARE | SOSPESO (1) | RIPETERE (2) | vuoto
+    data_prenotazione TEXT,
+    data_revisione TEXT NOT NULL,
+    codice_pratica TEXT,
+    veicolo_id INTEGER REFERENCES veicoli(id),
+    file_origine TEXT,
+    importato_at TEXT,
+    UNIQUE (targa, data_revisione, tipo_operazione)
+);
+CREATE INDEX IF NOT EXISTS idx_dekra_veicolo ON revisioni_dekra(veicolo_id);
+CREATE INDEX IF NOT EXISTS idx_dekra_targa ON revisioni_dekra(targa);
+
 -- Esiti dei contatti per lo scadenzario (dashboard/liste chiamata).
 CREATE TABLE IF NOT EXISTS contatti (
     id INTEGER PRIMARY KEY,
@@ -373,6 +393,7 @@ def importa_storico(conn: sqlite3.Connection, righe, file_origine: str) -> dict:
                 conn.execute("UPDATE veicoli SET attivo = 0 WHERE id = ?", (veicolo_id,))
                 dismessi += 1
 
+    ripristina_con_dati(conn)
     conn.execute(
         "INSERT INTO import_log (file, data_import, righe_lette, veicoli_nuovi, veicoli_aggiornati) VALUES (?, ?, ?, ?, ?)",
         (file_origine, adesso, len(righe), nuovi, aggiornati),
@@ -380,6 +401,211 @@ def importa_storico(conn: sqlite3.Connection, righe, file_origine: str) -> dict:
     conn.commit()
     return {"righe": len(righe), "nuovi": nuovi, "aggiornati": aggiornati,
             "revisioni": revisioni, "feedback": feedbacks, "dismessi": dismessi}
+
+
+def importa_dekra(conn: sqlite3.Connection, righe, file_origine: str) -> dict:
+    """Importa i passaggi in linea revisione dal PDF del portale Dekra.
+
+    Ogni riga viene salvata in revisioni_dekra (dedup su targa+data+operazione)
+    e agganciata al parco per telaio o targa; gli esiti REGOLARE alimentano
+    revisioni_effettuate (fonte 'dekra': date reali, migliorano lo scadenzario).
+    """
+    adesso = datetime.now().isoformat(timespec="seconds")
+    nuove = doppie = match = targhe_aggiunte = telai_aggiunti = 0
+    for r in righe:
+        if not r.data_revisione:
+            continue
+        veicolo = None
+        if r.telaio:
+            veicolo = conn.execute("SELECT * FROM veicoli WHERE telaio = ?", (r.telaio,)).fetchone()
+        if veicolo is None and r.targa:
+            veicolo = conn.execute(
+                "SELECT * FROM veicoli WHERE targa = ? AND (telaio IS NULL OR telaio = '')",
+                (r.targa,),
+            ).fetchone()
+        veicolo_id = veicolo["id"] if veicolo else None
+        if veicolo:
+            match += 1
+            if r.targa and not veicolo["targa"]:
+                conn.execute("UPDATE veicoli SET targa = ? WHERE id = ?", (r.targa, veicolo_id))
+                targhe_aggiunte += 1
+            if r.telaio and not veicolo["telaio"]:
+                conn.execute("UPDATE veicoli SET telaio = ? WHERE id = ?", (r.telaio, veicolo_id))
+                telai_aggiunti += 1
+
+        gia = conn.execute(
+            "SELECT id, veicolo_id FROM revisioni_dekra WHERE targa = ? AND data_revisione = ? AND tipo_operazione = ?",
+            (r.targa, r.data_revisione.isoformat(), r.tipo_operazione),
+        ).fetchone()
+        if gia:
+            doppie += 1
+            if veicolo_id and not gia["veicolo_id"]:
+                conn.execute("UPDATE revisioni_dekra SET veicolo_id = ? WHERE id = ?",
+                             (veicolo_id, gia["id"]))
+        else:
+            conn.execute(
+                """INSERT INTO revisioni_dekra (targa, telaio, categoria, tipo_operazione, esito,
+                   data_prenotazione, data_revisione, codice_pratica, veicolo_id, file_origine, importato_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (r.targa, r.telaio or None, r.categoria, r.tipo_operazione, r.esito,
+                 _iso(r.data_prenotazione), r.data_revisione.isoformat(), r.codice_pratica,
+                 veicolo_id, file_origine, adesso),
+            )
+            nuove += 1
+
+    revisioni = riagganciate = 0
+    riagganciate = riaggancia_dekra(conn)
+    # Sincronizza le revisioni REGOLARI agganciate in revisioni_effettuate (idempotente).
+    revisioni = conn.execute(
+        """INSERT INTO revisioni_effettuate (veicolo_id, data_revisione, fonte)
+           SELECT d.veicolo_id, d.data_revisione, 'dekra' FROM revisioni_dekra d
+           WHERE d.veicolo_id IS NOT NULL AND d.tipo_operazione = 'REV'
+             AND d.esito LIKE 'REGOLARE%'
+             AND NOT EXISTS (SELECT 1 FROM revisioni_effettuate r
+                             WHERE r.veicolo_id = d.veicolo_id
+                               AND r.data_revisione = d.data_revisione)""",
+    ).rowcount
+
+    ripristinati = ripristina_con_dati(conn)
+
+    conn.execute(
+        "INSERT INTO import_log (file, data_import, righe_lette, veicoli_nuovi, veicoli_aggiornati) VALUES (?, ?, ?, 0, ?)",
+        (file_origine, adesso, len(righe), match),
+    )
+    conn.commit()
+    non_agganciate = conn.execute(
+        "SELECT COUNT(*) AS n FROM revisioni_dekra WHERE veicolo_id IS NULL").fetchone()["n"]
+    abituali = conn.execute(
+        """SELECT COUNT(*) AS n FROM (SELECT targa FROM revisioni_dekra
+           WHERE tipo_operazione = 'REV' GROUP BY targa HAVING COUNT(*) >= 2)""").fetchone()["n"]
+    return {"righe": len(righe), "nuove": nuove, "doppie": doppie, "match": match,
+            "revisioni": revisioni, "riagganciate": riagganciate,
+            "targhe_aggiunte": targhe_aggiunte, "telai_aggiunti": telai_aggiunti,
+            "non_agganciate": non_agganciate, "abituali": abituali,
+            "ripristinati": ripristinati}
+
+
+def riaggancia_dekra(conn: sqlite3.Connection) -> int:
+    """Riprova ad agganciare al parco i passaggi Dekra rimasti orfani
+    (il veicolo può comparire con un import successivo)."""
+    n = 0
+    for d in conn.execute("SELECT * FROM revisioni_dekra WHERE veicolo_id IS NULL").fetchall():
+        veicolo = None
+        if d["telaio"]:
+            veicolo = conn.execute("SELECT id FROM veicoli WHERE telaio = ?", (d["telaio"],)).fetchone()
+        if veicolo is None and d["targa"]:
+            veicolo = conn.execute(
+                "SELECT id FROM veicoli WHERE targa = ? AND (telaio IS NULL OR telaio = '')",
+                (d["targa"],),
+            ).fetchone()
+        if veicolo:
+            conn.execute("UPDATE revisioni_dekra SET veicolo_id = ? WHERE id = ?",
+                         (veicolo["id"], d["id"]))
+            n += 1
+    return n
+
+
+def ripristina_con_dati(conn: sqlite3.Connection) -> int:
+    """Riporta in gestione i veicoli archiviati per mancanza di dati che nel
+    frattempo hanno ottenuto una data validabile (es. revisione reale da Dekra):
+    ogni import deve colmare i dati mancanti, non lasciarli fuori gestione."""
+    n = conn.execute(
+        """UPDATE veicoli SET archiviato = 0
+           WHERE attivo = 1 AND IFNULL(archiviato, 0) = 1
+             AND EXISTS (SELECT 1 FROM revisioni_effettuate r WHERE r.veicolo_id = veicoli.id)"""
+    ).rowcount
+    conn.commit()
+    return n
+
+
+def veicoli_dati_mancanti(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Veicoli attivi fuori gestione perché senza data immatricolazione né
+    revisione nota: con una telefonata si recupera la data e rientrano in
+    scadenzario (pulsante "Revisione fatta")."""
+    return conn.execute(
+        """SELECT v.id AS veicolo_id, v.targa, v.telaio, v.marca, v.modello,
+                  v.file_origine, c.nome AS cliente, c.telefono
+           FROM veicoli v JOIN clienti c ON c.id = v.cliente_id
+           LEFT JOIN punti_vendita pv ON pv.codice = v.punto_vendita
+           WHERE v.attivo = 1 AND IFNULL(v.archiviato, 0) = 1
+             AND v.data_immatricolazione IS NULL
+             AND NOT EXISTS (SELECT 1 FROM revisioni_effettuate r WHERE r.veicolo_id = v.id)
+             AND IFNULL(pv.escluso, 0) = 0 AND IFNULL(c.flotta, 0) = 0
+           ORDER BY c.nome"""
+    ).fetchall()
+
+
+def statistiche_dekra(conn: sqlite3.Connection) -> dict:
+    """Numeri per la scheda Statistiche della dashboard: attività della linea
+    revisioni (portale Dekra), quota parco nostro vs veicoli esterni,
+    fidelizzazione e potenziale di ritorno mese per mese (ultima revisione
+    REGOLARE + 2 anni)."""
+    tot = conn.execute(
+        """SELECT COUNT(*) AS passaggi, COUNT(DISTINCT targa) AS targhe,
+                  MIN(data_revisione) AS dal, MAX(data_revisione) AS al,
+                  SUM(veicolo_id IS NOT NULL) AS passaggi_nostri,
+                  SUM(veicolo_id IS NULL) AS passaggi_esterni,
+                  COUNT(DISTINCT CASE WHEN veicolo_id IS NOT NULL THEN targa END) AS targhe_nostre,
+                  COUNT(DISTINCT CASE WHEN veicolo_id IS NULL THEN targa END) AS targhe_esterne
+           FROM revisioni_dekra WHERE tipo_operazione = 'REV'"""
+    ).fetchone()
+    if not tot["passaggi"]:
+        return {"vuoto": True}
+
+    ritorni = {r["passaggi"]: r["targhe"] for r in conn.execute(
+        """SELECT passaggi, COUNT(*) AS targhe FROM
+           (SELECT COUNT(*) AS passaggi FROM revisioni_dekra
+            WHERE tipo_operazione = 'REV' GROUP BY targa)
+           GROUP BY passaggi"""
+    )}
+    fidelizzate = sum(n for p, n in ritorni.items() if p >= 2)
+
+    mensile = [dict(r) for r in conn.execute(
+        """SELECT substr(data_revisione, 1, 7) AS mese,
+                  SUM(veicolo_id IS NOT NULL) AS nostri,
+                  SUM(veicolo_id IS NULL) AS esterni
+           FROM revisioni_dekra WHERE tipo_operazione = 'REV'
+           GROUP BY mese ORDER BY mese"""
+    )]
+
+    # Potenziale di ritorno: per ogni targa con almeno una revisione REGOLARE,
+    # la prossima è dovuta nel mese di (ultima revisione + 2 anni).
+    oggi = date.today()
+    mese_corrente = f"{oggi.year:04d}-{oggi.month:02d}"
+    prossimi = []
+    a, m = oggi.year, oggi.month
+    for _ in range(12):
+        prossimi.append(f"{a:04d}-{m:02d}")
+        m += 1
+        if m > 12:
+            a, m = a + 1, 1
+    potenziale = {mese: {"mese": mese, "nostri": 0, "esterni": 0} for mese in prossimi}
+    arretrato = {"nostri": 0, "esterni": 0}
+    for r in conn.execute(
+        """SELECT targa, MAX(data_revisione) AS ultima,
+                  MAX(veicolo_id) IS NOT NULL AS nostro
+           FROM revisioni_dekra
+           WHERE tipo_operazione = 'REV' AND esito LIKE 'REGOLARE%'
+           GROUP BY targa"""
+    ):
+        dovuta = f"{int(r['ultima'][:4]) + 2:04d}-{r['ultima'][5:7]}"
+        chi = "nostri" if r["nostro"] else "esterni"
+        if dovuta < mese_corrente:
+            arretrato[chi] += 1
+        elif dovuta in potenziale:
+            potenziale[dovuta][chi] += 1
+
+    return {
+        "passaggi": tot["passaggi"], "targhe": tot["targhe"],
+        "dal": tot["dal"], "al": tot["al"],
+        "passaggi_nostri": tot["passaggi_nostri"], "passaggi_esterni": tot["passaggi_esterni"],
+        "targhe_nostre": tot["targhe_nostre"], "targhe_esterne": tot["targhe_esterne"],
+        "fidelizzate": fidelizzate,
+        "ritorni": [{"passaggi": p, "targhe": n} for p, n in sorted(ritorni.items())],
+        "mensile": mensile,
+        "potenziale": list(potenziale.values()),
+        "arretrato": arretrato,
+    }
 
 
 def importa_lead_tcar(conn: sqlite3.Connection, leads, file_origine: str) -> dict:
@@ -765,7 +991,7 @@ def unisci_veicoli(conn: sqlite3.Connection, id_telaio: int, id_targa: int) -> N
         conn.execute(f"UPDATE veicoli SET {assegnazioni} WHERE id = ?",
                      (*modifiche.values(), id_telaio))
     # storico dell'altra scheda: revisioni, contatti, lead
-    for tabella in ("revisioni_effettuate", "contatti", "lead_tcar"):
+    for tabella in ("revisioni_effettuate", "contatti", "lead_tcar", "revisioni_dekra"):
         conn.execute(f"UPDATE {tabella} SET veicolo_id = ? WHERE veicolo_id = ?",
                      (id_telaio, id_targa))
     # cliente: tieni quello col telefono migliore; l'altro, se resta senza veicoli, si elimina
@@ -971,7 +1197,7 @@ def segna_coda_inviata(conn: sqlite3.Connection, canale: str) -> int:
 
 # Tabelle dei dati (non di configurazione dello schema): svuotate dal reset.
 TABELLE_DATI = [
-    "code_invio", "contatti", "revisioni_effettuate", "lead_tcar", "veicoli",
+    "code_invio", "contatti", "revisioni_effettuate", "revisioni_dekra", "lead_tcar", "veicoli",
     "clienti", "punti_vendita", "import_log",
     "omonimi_ignorati", "doppioni_ignorati", "varianti_ignorate",
 ]
@@ -1037,11 +1263,13 @@ def registra_contatto(conn: sqlite3.Connection, veicolo_id: int, scadenza: str, 
 
 
 def registra_revisione(conn: sqlite3.Connection, veicolo_id: int, data_revisione: date, fonte: str = "operatore") -> None:
-    """Registra una revisione effettuata: la prossima scadenza slitta a +2 anni."""
+    """Registra una revisione effettuata: la prossima scadenza slitta a +2 anni.
+    Se il veicolo era archiviato per mancanza di dati, ora il dato c'è: rientra."""
     conn.execute(
         "INSERT INTO revisioni_effettuate (veicolo_id, data_revisione, fonte) VALUES (?, ?, ?)",
         (veicolo_id, data_revisione.isoformat(), fonte),
     )
+    conn.execute("UPDATE veicoli SET archiviato = 0 WHERE id = ?", (veicolo_id,))
     conn.commit()
 
 
