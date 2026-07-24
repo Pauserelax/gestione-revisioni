@@ -13,7 +13,7 @@ serve una dashboard che si apre nel browser. Nessun dato esce dal computer.
 
 ```bash
 cd app
-pip install openpyxl xlrd
+pip install openpyxl xlrd pypdf
 
 # carica dati fittizi per vedere l'app in funzione (nessun dato reale)
 python3 -m revisioni reset --conferma --demo
@@ -30,7 +30,19 @@ python3 -m revisioni web
   revisione fatta → riprogramma a +2 anni, auto venduta → recupero cliente),
   ricerca cliente con storico, correzione telefoni inline.
 - **Import multi-formato**: report C.C.F. del gestionale, registro
-  immatricolazioni, export lead. I duplicati sono neutralizzati per telaio/targa.
+  immatricolazioni, export lead, export PDF del portale revisioni (Dekra).
+  I duplicati sono neutralizzati per telaio/targa; ogni import arricchisce i
+  dati senza mai degradarli e riporta in gestione i veicoli archiviati che
+  ritrovano una data valida.
+- **Storico revisioni reali**: i passaggi in linea documentati dal portale
+  alimentano lo scadenzario con date certe e distinguono i veicoli del parco
+  clienti da quelli esterni (candidati al cross-selling).
+- **Statistiche**: scheda con i numeri della linea revisioni — quota parco
+  vs esterni, clienti fidelizzati, revisioni mese per mese e potenziale di
+  ritorno nei 12 mesi successivi.
+- **Liste di riattivazione**: Cold (scaduti mai contattati), Riscalda clienti
+  (scaduti da ricontattare: possibile nuovo veicolo), Dati mancanti (veicoli
+  senza data: una telefonata li fa entrare in scadenzario).
 - **Qualità dei dati**: validatore telefoni (fittizi, non validi, condivisi),
   rilevamento flotte, fusione clienti/veicoli duplicati — sempre con decisione
   dell'operatore, mai automatica.
@@ -65,6 +77,7 @@ esclusi da `.gitignore` per tutelare la privacy dei clienti. Il comando
 ```bash
 python3 -m revisioni web                       # dashboard
 python3 -m revisioni importa-immatricolazioni <file/cartella>
+python3 -m revisioni importa-dekra <pdf/cartella>   # export portale revisioni
 python3 -m revisioni scadenze [--mese AAAA-MM]
 python3 -m revisioni sms [--arretrato]         # export campagna SMS
 python3 -m revisioni telefoni [--excel]        # report qualità telefoni
