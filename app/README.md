@@ -35,6 +35,40 @@ computer).
 4. **Da recuperare** — clienti senza veicolo in scadenzario, con registrazione
    della nuova auto. **Cerca cliente** — storico per nome/telefono/targa/telaio.
 
+Nella dashboard, la scheda **❓ Legenda** spiega ogni pulsante, filtro e badge.
+
+## Invii automatici (moduli opzionali)
+
+L'invio diretto delle code è fornito da due **moduli aggiuntivi indipendenti**:
+`revisioni/modulo_email.py` (Brevo) e `revisioni/modulo_sms.py` (gateway SMS).
+`revisioni/invii.py` è il coordinatore: se un modulo non è presente, quel
+canale resta non disponibile e si usa solo l'export manuale. Il pacchetto
+Windows può essere generato senza uno dei due (`crea_pacchetto_windows.sh
+--senza-email` / `--senza-sms`).
+
+Il canale si attiva compilando `dati/config_invii.txt` (creato con un modello
+commentato al primo avvio della scheda Invii):
+
+- **Email — Brevo**: `brevo_api_key`, mittente verificato e `brevo_template_id`
+  di un template creato in Brevo. Nel template si usano i segnaposto
+  `{{params.NOME}} {{params.TARGA}} {{params.MARCA}} {{params.MODELLO}}
+  {{params.SCADENZA}} {{params.MESE}}`. Il template **deve** contenere il link
+  di disiscrizione e i dati del mittente. Invio in transazionale
+  (`POST /v3/smtp/email`, batch `messageVersions`).
+- **SMS — gateway HTTP** (es. "SMS Script" di SMSBiz): URL, metodo, nomi dei
+  parametri e credenziali dal manuale del proprio account. Il testo è quello di
+  `dati/sms_testo.txt` (stesso limite di 160 caratteri dell'export).
+
+Finché il file è vuoto i pulsanti "Invia ora" restano nascosti e si continua a
+esportare i file per il caricamento manuale. I pulsanti **✉️ di prova** mandano
+un singolo messaggio con dati fittizi a un indirizzo/numero digitato al momento,
+senza toccare la coda. Chi riceve viene registrato come contattato (esito
+`email_inviata` / `sms_inviato`) sulla scheda del veicolo, e quella riga esce
+dalla coda; le voci senza recapito o con errore restano in coda per il ritentativo.
+
+> `dati/config_invii.txt` contiene chiavi API e password: se `dati/` è su una
+> cartella di rete, limitane l'accesso. Non viene toccato dagli aggiornamenti.
+
 ## Qualità dei dati
 
 ```bash

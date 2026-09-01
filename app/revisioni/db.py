@@ -1195,6 +1195,33 @@ def segna_coda_inviata(conn: sqlite3.Connection, canale: str) -> int:
     return len(in_coda)
 
 
+def segna_righe_coda_inviate(conn: sqlite3.Connection, coda_ids: list[int], canale: str) -> int:
+    """Marca come inviate ORA solo le righe di coda indicate (usata dagli invii
+    automatici, che sanno esattamente quali messaggi sono davvero partiti) e
+    registra l'esito sul contatto del veicolo. Idempotente: ignora gli id già
+    marcati o inesistenti."""
+    if not coda_ids:
+        return 0
+    adesso = datetime.now().isoformat(timespec="seconds")
+    esito = "sms_inviato" if canale == "sms" else "email_inviata"
+    n = 0
+    for coda_id in coda_ids:
+        r = conn.execute(
+            "SELECT veicolo_id, scadenza FROM code_invio WHERE id = ? AND canale = ? AND inviato_il IS NULL",
+            (coda_id, canale),
+        ).fetchone()
+        if not r:
+            continue
+        conn.execute("UPDATE code_invio SET inviato_il = ? WHERE id = ?", (adesso, coda_id))
+        conn.execute(
+            "INSERT INTO contatti (veicolo_id, scadenza, data_contatto, esito, note) VALUES (?, ?, ?, ?, ?)",
+            (r["veicolo_id"], r["scadenza"] or "", adesso, esito, f"invio automatico {canale}"),
+        )
+        n += 1
+    conn.commit()
+    return n
+
+
 # Tabelle dei dati (non di configurazione dello schema): svuotate dal reset.
 TABELLE_DATI = [
     "code_invio", "contatti", "revisioni_effettuate", "revisioni_dekra", "lead_tcar", "veicoli",

@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import db as database
+from . import invii
 from .scadenze import calcola_scadenze, da_contattare
 
 _lock = threading.Lock()
@@ -103,6 +104,7 @@ PAGINA = """<!DOCTYPE html>
   <button data-tab="invii">📤 Invii</button>
   <button data-tab="stat">📊 Statistiche</button>
   <button data-tab="filtri">⚙️ Filtri</button>
+  <button data-tab="aiuto">❓ Legenda</button>
 </nav>
 <main>
   <section id="tab-chiamate">
@@ -147,6 +149,8 @@ PAGINA = """<!DOCTYPE html>
   <section id="tab-invii" style="display:none">
     <h3 style="margin:6px 0">✉️ Coda SMS (smscafè) — <span id="n-coda-sms">0</span> in coda</h3>
     <div class="filtri">
+      <button id="btn-invia-sms" style="display:none" onclick="inviaCoda('sms')">📨 Invia ora la coda SMS</button>
+      <button id="btn-prova-sms" style="display:none" onclick="inviaProva('sms')">✉️ SMS di prova a un numero…</button>
       <button onclick="window.location='/api/coda.xlsx?canale=sms'">⬇️ Esporta Excel per smscafè</button>
       <button onclick="segnaCodaInviata('sms')">✔️ Segna coda inviata oggi</button>
       <button onclick="svuotaCoda('sms')">🗑 Svuota coda</button>
@@ -154,6 +158,9 @@ PAGINA = """<!DOCTYPE html>
     <table id="tabella-coda-sms" style="margin-bottom:26px"><thead><tr><th>Cliente</th><th>Telefono</th><th>Veicolo</th><th>Scadenza</th><th>In coda dal</th><th>Inviato il</th><th></th></tr></thead><tbody></tbody></table>
     <h3 style="margin:6px 0">📧 Coda Brevo (email) — <span id="n-coda-brevo">0</span> in coda</h3>
     <div class="filtri">
+      <button id="btn-invia-brevo" style="display:none" onclick="inviaCoda('brevo')">📧 Invia ora la coda Brevo</button>
+      <button id="btn-prova-brevo" style="display:none" onclick="inviaProva('brevo')">✉️ Email di prova a un indirizzo…</button>
+      <button id="btn-verifica-brevo" style="display:none" onclick="verificaBrevo()">🔌 Verifica connessione Brevo</button>
       <button onclick="window.location='/api/coda.csv?canale=brevo'">⬇️ Esporta CSV per Brevo</button>
       <button onclick="segnaCodaInviata('brevo')">✔️ Segna coda inviata oggi</button>
       <button onclick="svuotaCoda('brevo')">🗑 Svuota coda</button>
@@ -202,6 +209,60 @@ PAGINA = """<!DOCTYPE html>
       <details class="grafico-card"><summary style="cursor:pointer;font-size:14px">📋 Dati in tabella</summary>
         <table id="stat-tabella" style="margin-top:10px;box-shadow:none"><thead><tr><th>Mese</th><th>Revisioni fatte</th><th>di cui parco nostro</th><th>di cui esterni</th></tr></thead><tbody></tbody></table>
       </details>
+    </div>
+  </section>
+  <section id="tab-aiuto" style="display:none">
+    <p class="muted" style="font-size:13px">Cosa fanno i pulsanti, i filtri e i simboli della dashboard. Questa pagina è solo un promemoria: non modifica nulla.</p>
+
+    <div class="cliente-card">
+      <h3 style="margin:2px 0 8px">📞 I pulsanti "Azioni" (scheda Da chiamare)</h3>
+      <p><b>Contattato</b> — registra che hai parlato col cliente. Il veicolo <b>resta</b> in lista: usalo quando richiamerai ancora.</p>
+      <p><b>Appuntamento</b> — il cliente ha preso appuntamento: il veicolo <b>esce</b> dalle liste di chiamata e dagli SMS (tornerà da solo alla prossima scadenza).</p>
+      <p><b>Revisione fatta</b> — chiede la data della revisione e sposta la prossima scadenza a <b>+2 anni</b>. Se il veicolo era fermo tra i "Dati mancanti", con la data rientra in scadenzario.</p>
+      <p><b>Non risponde</b> — segna il tentativo a vuoto (esito "irraggiungibile"). Il veicolo <b>resta</b> in lista da richiamare.</p>
+      <p><b>Auto venduta</b> — il cliente non ha più quel veicolo: esce da scadenzario e liste (lo storico resta). Se il cliente rimane senza auto, finisce nella scheda <b>Da recuperare</b> per registrare quella nuova.</p>
+      <p class="muted">La colonna Azioni può chiederti delle note: sono facoltative e restano nello storico del cliente.</p>
+    </div>
+
+    <div class="cliente-card">
+      <h3 style="margin:2px 0 8px">🔎 I filtri della scheda Da chiamare</h3>
+      <p><b>⏰ Scadono questo mese</b> — revisioni in scadenza nel mese in corso: la priorità di oggi.</p>
+      <p><b>📞 Da chiamare (+1 mese)</b> — scadenza tra circa un mese: da contattare al telefono.</p>
+      <p><b>✉️ SMS (+2 mesi)</b> — scadenza tra circa due mesi: primo avviso via SMS. Compaiono i pulsanti per scaricare/segnare la lista SMS.</p>
+      <p><b>🧊 Cold (mai contattati)</b> — scadenza già superata e <b>nessun</b> contatto mai registrato: recupero a freddo.</p>
+      <p><b>♻️ Riscalda clienti</b> — tutti gli scaduti da tempo: revisione probabilmente fatta altrove o auto cambiata. Selezionali e mettili in coda SMS/Brevo, oppure chiama: se ha cambiato auto usa "Auto venduta" e registra la nuova.</p>
+      <p><b>📇 Dati mancanti</b> — veicoli senza data di riferimento: chiedi al cliente quando ha fatto l'ultima revisione e premi "Revisione fatta", così entrano in scadenzario.</p>
+      <p><b>🎯 Con lead Tcar</b> — veicoli per cui esiste un lead Tcar aperto.</p>
+      <p class="muted"><b>📅 Vai al mese</b> mostra <b>tutte</b> le scadenze di un mese qualsiasi, anche futuro, ignorando i filtri qui sopra.</p>
+    </div>
+
+    <div class="cliente-card">
+      <h3 style="margin:2px 0 8px">🏷️ Simboli e segnalazioni sulle righe</h3>
+      <p><span class="badge b-lead">LEAD TCAR</span> il cliente ha un lead Tcar aperto su questo veicolo.</p>
+      <p><span class="badge b-avviso">cambio auto?</span> il cliente ha in anagrafica un veicolo più recente: forse non usa più questo.</p>
+      <p><span class="badge b-avviso">♻️ possibile nuovo veicolo</span> scadenza superata da tempo: potrebbe aver cambiato auto.</p>
+      <p><span class="badge b-tel">senza email</span> non ha un indirizzo email: non raggiungibile con Brevo.</p>
+      <p><span class="badge b-tel">☎️ telefono mancante</span> / <span class="badge b-tel">tel. sospetto</span> / <span class="badge b-tel">tel. non valido</span> il numero in anagrafica è assente o poco affidabile: correggilo con la matita ✏️.</p>
+      <p><span class="badge b-lead">📤 coda sms</span> / <span class="badge b-lead">📤 coda brevo</span> il veicolo è già nella coda di invio di quel canale.</p>
+      <p><span class="badge b-esito">contattato</span> mostra l'esito dell'ultimo contatto registrato.</p>
+    </div>
+
+    <div class="cliente-card">
+      <h3 style="margin:2px 0 8px">🚦 Stato della scadenza (barra colorata a sinistra)</h3>
+      <p><span class="stato" style="color:#cc4125">SCADUTA</span> — la scadenza è già passata.</p>
+      <p><span class="stato" style="color:#9c7b00">IN SCADENZA</span> — scade nel mese in corso.</p>
+      <p><span class="stato" style="color:#38761d">PROSSIMA</span> — scade entro circa due mesi.</p>
+      <p><span class="stato" style="color:#5b6673">DATI MANCANTI</span> — manca la data per calcolare la scadenza.</p>
+    </div>
+
+    <div class="cliente-card">
+      <h3 style="margin:2px 0 8px">📤 Come funzionano gli invii (SMS ed email Brevo)</h3>
+      <p>Nella scheda Da chiamare, seleziona i clienti con le caselle e usa <b>✉️ Metti in coda SMS</b> o <b>📧 Metti in coda Brevo</b>. Le code si gestiscono nella scheda <b>📤 Invii</b>.</p>
+      <p><b>⬇️ Esporta</b> — scarica il file (Excel per SMS Cafè, CSV per Brevo) da caricare a mano sul servizio. Funziona sempre.</p>
+      <p><b>📨 / 📧 Invia ora</b> — invia direttamente dal programma, se le credenziali sono state inserite in <code>dati/config_invii.txt</code>. Se il file non è compilato, questi pulsanti non compaiono.</p>
+      <p><b>✉️ SMS / Email di prova</b> — chiede un numero o un indirizzo e manda un solo messaggio di prova con dati fittizi, senza toccare la coda: utile per controllare template e credenziali.</p>
+      <p><b>✔️ Segna coda inviata oggi</b> — segna la coda come già spedita <b>quando l'hai inviata a mano</b> dal sito del servizio: non invia niente, registra soltanto.</p>
+      <p><b>🗑 Svuota coda</b> — toglie dalla coda le voci non ancora inviate (gli invii già registrati restano nello storico).</p>
     </div>
   </section>
 </main>
@@ -282,8 +343,41 @@ async function svuotaCoda(canale) {
   caricaInvii(); carica();
 }
 async function rimuoviDaCoda(id) { await api('/api/coda-rimuovi', {id}); caricaInvii(); carica(); }
+async function inviaCoda(canale) {
+  const n = document.getElementById('n-coda-' + canale).textContent;
+  if (n === '0') { alert('La coda ' + canale.toUpperCase() + ' è vuota.'); return; }
+  if (!confirm('Invio ORA ' + n + ' messaggi ' + canale.toUpperCase() + ' ai clienti in coda. Confermi?')) return;
+  const btn = document.getElementById('btn-invia-' + canale);
+  const testo = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Invio in corso…';
+  try {
+    const r = await api('/api/coda-invia', {canale});
+    alert(r.messaggio || r.errore || 'Fatto.');
+  } catch (e) {
+    alert('Errore di rete durante l\\'invio.');
+  }
+  btn.disabled = false; btn.textContent = testo;
+  caricaInvii(); carica();
+}
+async function verificaBrevo() {
+  const r = await api('/api/invii-verifica-brevo', {});
+  alert(r.messaggio);
+}
+async function inviaProva(canale) {
+  const etichetta = canale === 'brevo' ? "un indirizzo email" : 'un numero di cellulare';
+  const dest = prompt('Invio un messaggio di prova ' + canale.toUpperCase() + ' a ' + etichetta + ' (dati fittizi). Destinatario:');
+  if (!dest || !dest.trim()) return;
+  const r = await api('/api/invii-prova', {canale, destinatario: dest.trim()});
+  alert(r.messaggio || r.errore || 'Fatto.');
+}
 async function caricaInvii() {
   const r = await api('/api/code');
+  const cfg = await api('/api/invii-config');
+  document.getElementById('btn-invia-brevo').style.display = cfg.brevo ? '' : 'none';
+  document.getElementById('btn-prova-brevo').style.display = cfg.brevo ? '' : 'none';
+  document.getElementById('btn-verifica-brevo').style.display = cfg.brevo ? '' : 'none';
+  document.getElementById('btn-invia-sms').style.display = cfg.sms ? '' : 'none';
+  document.getElementById('btn-prova-sms').style.display = cfg.sms ? '' : 'none';
   for (const canale of ['sms', 'brevo']) {
     const righe = r[canale];
     document.getElementById('n-coda-' + canale).textContent = righe.filter(x => !x.inviato_il).length;
@@ -551,7 +645,7 @@ async function caricaStat() {
 document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.remove('attivo'));
   b.classList.add('attivo');
-  ['chiamate','recupero','cerca','invii','stat','filtri'].forEach(t => document.getElementById('tab-' + t).style.display = (t === b.dataset.tab ? '' : 'none'));
+  ['chiamate','recupero','cerca','invii','stat','filtri','aiuto'].forEach(t => document.getElementById('tab-' + t).style.display = (t === b.dataset.tab ? '' : 'none'));
   if (b.dataset.tab === 'recupero') caricaRecupero();
   if (b.dataset.tab === 'filtri') caricaFiltri();
   if (b.dataset.tab === 'invii') caricaInvii();
@@ -591,12 +685,31 @@ def _json(handler: BaseHTTPRequestHandler, dati, codice=200):
     handler.wfile.write(corpo)
 
 
+def _riassunto_invio(canale: str, esito: dict) -> str:
+    """Frase riassuntiva dell'esito di un invio bulk, per l'alert in dashboard."""
+    fatti = "email inviate" if canale == "brevo" else "SMS inviati"
+    parti = [f"{esito.get('inviati', 0)} {fatti}"]
+    if esito.get("saltati_senza_email"):
+        parti.append(f"{esito['saltati_senza_email']} senza indirizzo email (restano in coda)")
+    if esito.get("saltati_senza_numero"):
+        parti.append(f"{esito['saltati_senza_numero']} senza cellulare valido (restano in coda)")
+    errori = esito.get("errori") or []
+    if errori:
+        parti.append(f"{len(errori)} errori:\n- " + "\n- ".join(errori))
+    if esito.get("interrotto"):
+        parti.append("invio interrotto: le voci non inviate restano in coda, riprova più tardi")
+    return ". ".join(parti) + "."
+
+
 def crea_handler(percorso_db: Path):
     # Connessione unica (le richieste sono serializzate da _lock) e cache dei
     # calcoli pesanti, invalidata a ogni scrittura e a ogni cambio di giorno.
     conn_condivisa = database.apri_db(percorso_db, condivisa_tra_thread=True)
     cache: dict = {}
     stato = {"giorno": date.today()}
+    # Un invio bulk alla volta per canale (l'I/O di rete gira fuori da _lock).
+    invio_in_corso = {"sms": False, "brevo": False}
+    config_invii = percorso_db.parent / invii.NOME_FILE_CONFIG
 
     def scadenze_cache(includi_esclusi: bool = False):
         chiave = "tutte" if includi_esclusi else "attive"
@@ -853,6 +966,9 @@ def crea_handler(percorso_db: Path):
                     elif url.path == "/api/cerca":
                         q = parse_qs(url.query).get("q", [""])[0].strip()
                         _json(self, {"clienti": self._cerca(conn, q, scadenze_cache(True))})
+                    elif url.path == "/api/invii-config":
+                        cfg = invii.leggi_config(config_invii)
+                        _json(self, invii.stato(cfg))
                     else:
                         _json(self, {"errore": "non trovato"}, 404)
                 finally:
@@ -861,6 +977,14 @@ def crea_handler(percorso_db: Path):
         def do_POST(self):
             lunghezza = int(self.headers.get("Content-Length", 0))
             dati = json.loads(self.rfile.read(lunghezza) or b"{}")
+            # Gli invii fanno I/O di rete: NON devono tenere _lock (la dashboard
+            # resterebbe congelata per tutta la durata dell'invio).
+            if self.path == "/api/invii-verifica-brevo":
+                return self._verifica_brevo()
+            if self.path == "/api/invii-prova":
+                return self._invii_prova(dati)
+            if self.path == "/api/coda-invia":
+                return self._coda_invia(dati)
             with _lock:
                 verifica_giorno()
                 conn = self._conn()
@@ -938,6 +1062,60 @@ def crea_handler(percorso_db: Path):
                         _json(self, {"errore": "non trovato"}, 404)
                 finally:
                     pass
+
+        # ---- Invii automatici (I/O di rete: fuori da _lock) ------------------
+
+        def _verifica_brevo(self):
+            cfg = invii.leggi_config(config_invii)
+            _json(self, invii.verifica_brevo(cfg))
+
+        def _invii_prova(self, dati):
+            canale = dati.get("canale")
+            destinatario = (dati.get("destinatario") or "").strip()
+            if canale not in ("brevo", "sms"):
+                return _json(self, {"errore": "canale non valido"}, 400)
+            if not destinatario:
+                return _json(self, {"errore": "indica un indirizzo email o un numero di cellulare"}, 400)
+            cfg = invii.leggi_config(config_invii)
+            if not invii.stato(cfg).get(canale):
+                return _json(self, {"errore": f"Modulo {canale} non installato o non configurato "
+                                              "(dati/config_invii.txt)."}, 400)
+            _json(self, invii.prova(canale, cfg, destinatario, percorso_db.parent))
+
+        def _coda_invia(self, dati):
+            canale = dati.get("canale", "brevo")
+            if canale not in ("brevo", "sms"):
+                return _json(self, {"errore": "canale non valido"}, 400)
+
+            with _lock:
+                if invio_in_corso.get(canale):
+                    return _json(self, {"errore": f"Invio {canale.upper()} già in corso, attendere."}, 409)
+                invio_in_corso[canale] = True
+            try:
+                with _lock:
+                    verifica_giorno()
+                    conn = self._conn()
+                    cfg = invii.leggi_config(config_invii)
+                    if not invii.stato(cfg).get(canale):
+                        return _json(self, {"errore": f"Modulo {canale} non installato o non configurato "
+                                                      "(dati/config_invii.txt)."}, 400)
+                    righe = [dict(r) for r in database.coda_invio(conn, canale, solo_in_coda=True)]
+                if not righe:
+                    return _json(self, {"inviati": 0, "salvati": 0, "messaggio": "Coda vuota."})
+
+                # I/O di rete con lock rilasciato: la dashboard resta reattiva.
+                esito = invii.invia(canale, righe, cfg, percorso_db.parent)
+
+                with _lock:
+                    conn = self._conn()
+                    n = database.segna_righe_coda_inviate(conn, esito.get("inviati_ids", []), canale)
+                    invalida()
+                esito["salvati"] = n
+                esito["messaggio"] = _riassunto_invio(canale, esito)
+                _json(self, esito)
+            finally:
+                with _lock:
+                    invio_in_corso[canale] = False
 
         def _esito(self, conn, dati):
             veicolo_id = dati.get("veicolo_id")

@@ -58,7 +58,11 @@ browser su quella attiva.
   rilevamento flotte, fusione clienti/veicoli duplicati — sempre con decisione
   dell'operatore, mai automatica.
 - **Campagne**: liste SMS (≤160 caratteri, personalizzate col nome) ed email,
-  con code d'invio tracciate.
+  con code d'invio tracciate. Invio automatico opzionale — email via API Brevo
+  (template + segnaposto), SMS via gateway HTTP configurabile — attivabile
+  compilando `dati/config_invii.txt`; finché è vuoto si continua a esportare i
+  file per il caricamento manuale. Chi riceve viene segnato come contattato
+  (esito `email_inviata` / `sms_inviato`) sulla scheda del veicolo.
 - **Distribuzione**: pacchetto portabile Windows con Python incorporato,
   backup automatico del database, uso da cartella condivisa una postazione
   alla volta.

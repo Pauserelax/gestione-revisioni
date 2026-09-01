@@ -10,10 +10,24 @@
 #     import/     <- dove depositare i file mensili da importare
 #     Avvia Revisioni.bat / Importa immatricolazioni.bat
 #
-# Uso:  ./crea_pacchetto_windows.sh [--con-dati]
-#   --con-dati  include una copia del database attuale (primo invio)
+# Uso:  ./crea_pacchetto_windows.sh [--con-dati] [--senza-email] [--senza-sms]
+#   --con-dati     include una copia del database attuale (primo invio)
+#   --senza-email  NON include il modulo opzionale di invio email (Brevo)
+#   --senza-sms    NON include il modulo opzionale di invio SMS
+#                  (i moduli sono componenti aggiuntivi: senza di essi il canale
+#                   resta non disponibile e si usa solo l'export manuale)
 set -euo pipefail
 cd "$(dirname "$0")"
+
+CON_DATI=0; SENZA_EMAIL=0; SENZA_SMS=0
+for arg in "$@"; do
+    case "$arg" in
+        --con-dati)    CON_DATI=1 ;;
+        --senza-email) SENZA_EMAIL=1 ;;
+        --senza-sms)   SENZA_SMS=1 ;;
+        *) echo "Argomento non riconosciuto: $arg"; exit 2 ;;
+    esac
+done
 
 PYVER=3.12.8
 BUILD=build/GestioneRevisioni
@@ -54,7 +68,16 @@ cp -R app/revisioni "$BUILD/app/revisioni"
 cp app/README.md "$BUILD/app/README.md" 2>/dev/null || true
 find "$BUILD/app" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 
-if [[ "${1:-}" == "--con-dati" ]]; then
+if [[ "$SENZA_EMAIL" == "1" ]]; then
+    echo "  (escludo il modulo email — invio Brevo non disponibile)"
+    rm -f "$BUILD/app/revisioni/modulo_email.py"
+fi
+if [[ "$SENZA_SMS" == "1" ]]; then
+    echo "  (escludo il modulo SMS — invio SMS non disponibile)"
+    rm -f "$BUILD/app/revisioni/modulo_sms.py"
+fi
+
+if [[ "$CON_DATI" == "1" ]]; then
     echo "— Includo il database attuale (primo invio)…"
     cp dati/revisioni.db "$BUILD/dati/revisioni.db"
     cp dati/sms_testo*.txt "$BUILD/dati/" 2>/dev/null || true
@@ -102,6 +125,16 @@ Se resta accesa piu' giorni si aggiorna comunque da sola al cambio data;
 riaprendo l'avvio mentre e' gia' accesa, si riapre solo il browser su
 quella gia' in funzione (non riparte): in quel caso, per sicurezza,
 chiudere la finestra nera e rilanciare.
+
+INVII AUTOMATICI (opzionali): per spedire SMS ed email direttamente dal
+programma, compilare "dati\config_invii.txt" con le credenziali (Brevo per le
+email, gateway SMS per gli SMS). Finche' e' vuoto, i pulsanti "Invia ora" non
+compaiono e si continua con l'export dei file da caricare a mano. I pulsanti
+"di prova" mandano un singolo messaggio con dati finti a un indirizzo/numero
+digitato al momento. Chi riceve viene segnato come contattato sulla scheda
+del veicolo.
+ATTENZIONE: "config_invii.txt" contiene password/chiavi: se "dati" e' in rete,
+limitane l'accesso. Non viene toccato dagli aggiornamenti.
 
 BACKUP: a ogni avvio viene salvata una copia del database in dati\backup
 (una al giorno, tiene le ultime 30).
