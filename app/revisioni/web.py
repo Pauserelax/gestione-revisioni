@@ -593,9 +593,10 @@ def _json(handler: BaseHTTPRequestHandler, dati, codice=200):
 
 def crea_handler(percorso_db: Path):
     # Connessione unica (le richieste sono serializzate da _lock) e cache dei
-    # calcoli pesanti, invalidata a ogni scrittura.
+    # calcoli pesanti, invalidata a ogni scrittura e a ogni cambio di giorno.
     conn_condivisa = database.apri_db(percorso_db, condivisa_tra_thread=True)
     cache: dict = {}
+    stato = {"giorno": date.today()}
 
     def scadenze_cache(includi_esclusi: bool = False):
         chiave = "tutte" if includi_esclusi else "attive"
@@ -636,6 +637,19 @@ def crea_handler(percorso_db: Path):
     def invalida():
         cache.clear()
 
+    def verifica_giorno():
+        """La 'fase' di ogni scadenza (SMS / CHIAMATA / MESE_CORRENTE /
+        ARRETRATO) è calcolata rispetto a date.today() del momento del calcolo
+        e poi tenuta in cache per tutta la vita del processo. Se la dashboard
+        resta accesa oltre la mezzanotte (tipico: finestra lasciata aperta da
+        un giorno all'altro o dal primo del mese) la cache va buttata, altrimenti
+        continua a mostrare la classificazione del giorno in cui è stata riempita
+        (es. le revisioni di settembre ancora sotto "CHIAMATA (+1 mese)")."""
+        oggi = date.today()
+        if oggi != stato["giorno"]:
+            stato["giorno"] = oggi
+            cache.clear()
+
     class Handler(BaseHTTPRequestHandler):
 
         def log_message(self, *a):
@@ -655,6 +669,7 @@ def crea_handler(percorso_db: Path):
                 self.wfile.write(corpo)
                 return
             with _lock:
+                verifica_giorno()
                 conn = self._conn()
                 try:
                     if url.path == "/api/riepilogo":
@@ -847,6 +862,7 @@ def crea_handler(percorso_db: Path):
             lunghezza = int(self.headers.get("Content-Length", 0))
             dati = json.loads(self.rfile.read(lunghezza) or b"{}")
             with _lock:
+                verifica_giorno()
                 conn = self._conn()
                 try:
                     if self.path == "/api/esito":
@@ -1106,8 +1122,27 @@ def avvia(percorso_db: Path, porta: int = 8765, apri_browser: bool = True, rete:
     try:
         server = ThreadingHTTPServer((host, porta), crea_handler(percorso_db))
     except OSError:
-        # Porta già occupata: la dashboard è già accesa, riapri solo il browser.
-        print(f"La dashboard è già in esecuzione: apro {indirizzo}")
+        # Porta già occupata: c'è un'altra istanza della dashboard accesa su
+        # questo PC. Non ne parte una nuova: si riapre solo il browser su quella.
+        import time
+        lucchetto = percorso_db.parent / "in_uso.lock"
+        acceso_da = ""
+        try:
+            testo = lucchetto.read_text(encoding="utf-8", errors="replace").strip()
+            giorni = (time.time() - lucchetto.stat().st_mtime) / 86400
+            acceso_da = f" ({testo})" if testo else ""
+        except OSError:
+            giorni = 0
+        print("=" * 62)
+        print(f"  La dashboard è GIÀ IN ESECUZIONE su questo PC{acceso_da}.")
+        print(f"  Riapro solo il browser su {indirizzo} — non riparte.")
+        if giorni >= 1:
+            print("")
+            print("  ⚠ È accesa da più di un giorno: le scadenze potrebbero")
+            print("    mostrare la classificazione di un giorno passato.")
+            print("    Meglio CHIUDERE quella finestra nera e rilanciare l'avvio,")
+            print("    così i conteggi del mese in corso ripartono corretti.")
+        print("=" * 62)
         if apri_browser:
             import webbrowser
             webbrowser.open(indirizzo)

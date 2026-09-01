@@ -96,6 +96,12 @@ Il programma lo controlla da solo: se e' gia' aperto altrove, avvisa e non parte
 Se resta bloccato dopo un crash, eliminare il file dati\in_uso.lock.
 Il primo avvio dalla rete puo' richiedere qualche secondo in piu'.
 
+A FINE GIORNATA conviene chiudere la finestra nera della dashboard.
+Se resta accesa piu' giorni si aggiorna comunque da sola al cambio data;
+riaprendo l'avvio mentre e' gia' accesa, si riapre solo il browser su
+quella gia' in funzione (non riparte): in quel caso, per sicurezza,
+chiudere la finestra nera e rilanciare.
+
 BACKUP: a ogni avvio viene salvata una copia del database in dati\backup
 (una al giorno, tiene le ultime 30).
 
