@@ -36,9 +36,10 @@ echo "— Installo le librerie (pure-Python, compatibili Windows)…"
 python3 -m pip install --quiet --target "$BUILD/python/Lib/site-packages" openpyxl xlrd pypdf
 
 echo "— Controllo di integrità della dashboard…"
-python3 - << 'EOF'
-import re, sys
-sys.path.insert(0, 'app')
+# Le dipendenze (openpyxl, ...) sono quelle appena installate per il pacchetto:
+# le rendo visibili all'interprete host per poter importare revisioni.web.
+PYTHONPATH="$BUILD/python/Lib/site-packages:app" python3 - << 'EOF'
+import re
 from revisioni.web import PAGINA
 js = re.search(r'<script>(.*)</script>', PAGINA, re.S).group(1)
 open('/tmp/_verifica_pagina.js', 'w').write(js)
