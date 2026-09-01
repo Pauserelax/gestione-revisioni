@@ -22,6 +22,17 @@ python3 -m revisioni reset --conferma --demo
 python3 -m revisioni web
 ```
 
+## Uso quotidiano
+
+A fine giornata conviene chiudere la finestra della dashboard e riaprirla il
+giorno dopo. La classificazione delle scadenze (SMS a +2 mesi, chiamata a +1
+mese, mese corrente, arretrato) dipende dalla data del giorno: se la finestra
+resta aperta a lungo — tipicamente a cavallo del primo del mese — la dashboard
+si riallinea comunque da sola alla prima richiesta del giorno nuovo, ma un
+riavvio pulito è la prassi consigliata. Se si rilancia l'avvio mentre la
+dashboard è già in esecuzione, non ne parte una seconda: viene solo riaperto il
+browser su quella attiva.
+
 ## Funzionalità
 
 - **Scadenzario** per fasi operative: SMS a +2 mesi, chiamata a +1 mese,
