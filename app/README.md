@@ -39,12 +39,10 @@ Nella dashboard, la scheda **❓ Legenda** spiega ogni pulsante, filtro e badge.
 
 ## Invii automatici (moduli opzionali)
 
-L'invio diretto delle code è fornito da due **moduli aggiuntivi indipendenti**:
+L'invio diretto delle code è fornito da due **moduli opzionali indipendenti**:
 `revisioni/modulo_email.py` (Brevo) e `revisioni/modulo_sms.py` (gateway SMS).
 `revisioni/invii.py` è il coordinatore: se un modulo non è presente, quel
-canale resta non disponibile e si usa solo l'export manuale. Il pacchetto
-Windows può essere generato senza uno dei due (`crea_pacchetto_windows.sh
---senza-email` / `--senza-sms`).
+canale resta non disponibile e si usa solo l'export manuale.
 
 Il canale si attiva compilando `dati/config_invii.txt` (creato con un modello
 commentato al primo avvio della scheda Invii):

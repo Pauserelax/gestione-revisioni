@@ -1,6 +1,6 @@
 """Modulo opzionale: invio SMS automatico via gateway HTTP.
 
-Componente aggiuntivo di "Gestione Revisioni". Se questo file non è presente,
+Modulo opzionale di "Gestione Revisioni". Se questo file non è presente,
 il canale SMS resta non disponibile e la dashboard offre solo l'export Excel
 per il caricamento manuale (SMS Cafè).
 

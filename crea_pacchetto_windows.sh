@@ -10,24 +10,10 @@
 #     import/     <- dove depositare i file mensili da importare
 #     Avvia Revisioni.bat / Importa immatricolazioni.bat
 #
-# Uso:  ./crea_pacchetto_windows.sh [--con-dati] [--senza-email] [--senza-sms]
-#   --con-dati     include una copia del database attuale (primo invio)
-#   --senza-email  NON include il modulo opzionale di invio email (Brevo)
-#   --senza-sms    NON include il modulo opzionale di invio SMS
-#                  (i moduli sono componenti aggiuntivi: senza di essi il canale
-#                   resta non disponibile e si usa solo l'export manuale)
+# Uso:  ./crea_pacchetto_windows.sh [--con-dati]
+#   --con-dati  include una copia del database attuale (primo invio)
 set -euo pipefail
 cd "$(dirname "$0")"
-
-CON_DATI=0; SENZA_EMAIL=0; SENZA_SMS=0
-for arg in "$@"; do
-    case "$arg" in
-        --con-dati)    CON_DATI=1 ;;
-        --senza-email) SENZA_EMAIL=1 ;;
-        --senza-sms)   SENZA_SMS=1 ;;
-        *) echo "Argomento non riconosciuto: $arg"; exit 2 ;;
-    esac
-done
 
 PYVER=3.12.8
 BUILD=build/GestioneRevisioni
@@ -68,16 +54,7 @@ cp -R app/revisioni "$BUILD/app/revisioni"
 cp app/README.md "$BUILD/app/README.md" 2>/dev/null || true
 find "$BUILD/app" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 
-if [[ "$SENZA_EMAIL" == "1" ]]; then
-    echo "  (escludo il modulo email — invio Brevo non disponibile)"
-    rm -f "$BUILD/app/revisioni/modulo_email.py"
-fi
-if [[ "$SENZA_SMS" == "1" ]]; then
-    echo "  (escludo il modulo SMS — invio SMS non disponibile)"
-    rm -f "$BUILD/app/revisioni/modulo_sms.py"
-fi
-
-if [[ "$CON_DATI" == "1" ]]; then
+if [[ "${1:-}" == "--con-dati" ]]; then
     echo "— Includo il database attuale (primo invio)…"
     cp dati/revisioni.db "$BUILD/dati/revisioni.db"
     cp dati/sms_testo*.txt "$BUILD/dati/" 2>/dev/null || true

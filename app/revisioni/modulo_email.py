@@ -1,6 +1,6 @@
 """Modulo opzionale: invio email automatico via API Brevo.
 
-Componente aggiuntivo di "Gestione Revisioni". Se questo file non è presente,
+Modulo opzionale di "Gestione Revisioni". Se questo file non è presente,
 il canale email resta non disponibile e la dashboard offre solo l'export CSV
 per il caricamento manuale su Brevo.
 

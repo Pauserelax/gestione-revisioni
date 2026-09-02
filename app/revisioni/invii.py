@@ -1,7 +1,7 @@
 """Coordinatore degli invii automatici — moduli opzionali email / SMS.
 
 L'app base sa solo *esportare* i file per il caricamento manuale su Brevo e
-sul gateway SMS. L'invio automatico è fornito da due moduli aggiuntivi e
+sul gateway SMS. L'invio automatico è fornito da due moduli opzionali e
 indipendenti:
 
     revisioni.modulo_email   invio email via API Brevo (template transazionale)
