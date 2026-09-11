@@ -1197,8 +1197,17 @@ def crea_handler(percorso_db: Path):
                         if esito["divergenze"]:
                             dettaglio += f", {len(esito['divergenze'])} divergenze data da verificare"
                     else:
-                        return _json(self, {"errore": "formato non riconosciuto: il nome del file "
-                                            "deve contenere mese e anno (es. AGOSTO 2026.xlsx)"}, 400)
+                        from .parser_storico import leggi_file_storico
+                        righe_storico = leggi_file_storico(percorso)
+                        if not righe_storico:
+                            return _json(self, {"errore": "formato non riconosciuto: rinomina il file "
+                                                "con mese e anno (es. AGOSTO 2026.xlsx) se è l'immatricolazioni "
+                                                "mensile, oppure controlla le intestazioni delle colonne "
+                                                "(Telaio o Targa+Cliente) se è un file storico/usato"}, 400)
+                        esito = database.importa_storico(conn, righe_storico, nome)
+                        dettaglio = (f"storico/usato: {esito['righe']} righe, "
+                                     f"{esito['nuovi']} veicoli nuovi, {esito['aggiornati']} aggiornati, "
+                                     f"{esito['revisioni']} revisioni/scadenze registrate")
                 invalida_cache()
                 _json(self, {"ok": True, "dettaglio": dettaglio})
             except Exception as e:

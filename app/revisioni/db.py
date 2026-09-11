@@ -19,10 +19,13 @@ CREATE TABLE IF NOT EXISTS clienti (
 );
 
 -- Punti vendita / venditori: escluso = 1 li toglie da scadenzario e liste.
+-- escluso_manuale = 1 quando la scelta è stata fatta a mano dalla scheda
+-- Punti vendita: protegge dalla politica di default (vedi _escluso_di_default).
 CREATE TABLE IF NOT EXISTS punti_vendita (
     codice TEXT PRIMARY KEY,
     descrizione TEXT,
-    escluso INTEGER NOT NULL DEFAULT 0
+    escluso INTEGER NOT NULL DEFAULT 0,
+    escluso_manuale INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS veicoli (
@@ -181,6 +184,25 @@ def _migra(conn: sqlite3.Connection) -> None:
         # scadenzario, liste e "da recuperare"; resta nello storico cliente.
         conn.execute("ALTER TABLE veicoli ADD COLUMN archiviato INTEGER NOT NULL DEFAULT 0")
         conn.commit()
+    colonne_pv = {r["name"] for r in conn.execute("PRAGMA table_info(punti_vendita)")}
+    if "escluso_manuale" not in colonne_pv:
+        conn.execute("ALTER TABLE punti_vendita ADD COLUMN escluso_manuale INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+    # Applica la politica punti vendita (vedi _escluso_di_default) a tutti i codici
+    # non ancora decisi a mano: corregge una tantum quelli importati prima che la
+    # regola esistesse (es. il 28) e resta innocua sui codici già coerenti.
+    da_correggere = [
+        r["codice"] for r in conn.execute(
+            "SELECT codice, escluso FROM punti_vendita WHERE escluso_manuale = 0"
+        )
+        if bool(r["escluso"]) != _escluso_di_default(r["codice"])
+    ]
+    if da_correggere:
+        conn.executemany(
+            "UPDATE punti_vendita SET escluso = ? WHERE codice = ?",
+            [(1 if _escluso_di_default(c) else 0, c) for c in da_correggere],
+        )
+        conn.commit()
     # telaio era NOT NULL: ricostruzione tabella per ammettere veicoli con sola targa.
     if any(r["name"] == "telaio" and r["notnull"] for r in conn.execute("PRAGMA table_info(veicoli)")):
         campi = ("id, telaio, targa, marca, modello, versione, serie, punto_vendita, cliente_id, "
@@ -216,15 +238,29 @@ def _iso(d: date | None) -> str | None:
     return d.isoformat() if d else None
 
 
+def _escluso_di_default(codice: str) -> bool:
+    """Politica punti vendita (decisione utente, 09/2026): sono "nostri" solo i
+    codici 01-23, tranne il 06 (Castiglione). Tutto il resto — rivenditori/
+    officine terze non del gruppo, es. 28, 35 Ceriani, 48 Livio Car Racing,
+    61 Senese Saltrio, 82 Rivabene — è escluso di default da scadenzario,
+    liste e invii. Resta modificabile a mano dalla scheda Punti vendita
+    (la scelta manuale non viene più toccata, vedi escluso_manuale)."""
+    try:
+        n = int(codice)
+    except (TypeError, ValueError):
+        return False
+    return not (1 <= n <= 23 and n != 6)
+
+
 def importa_righe(conn: sqlite3.Connection, righe: list[RigaVeicolo], file_origine: str,
                   punti_vendita: dict[str, str] | None = None) -> dict:
     """Inserisce/aggiorna clienti e veicoli. Il telaio è la chiave dei veicoli."""
     for codice, descrizione in (punti_vendita or {}).items():
         conn.execute(
-            """INSERT INTO punti_vendita (codice, descrizione) VALUES (?, ?)
+            """INSERT INTO punti_vendita (codice, descrizione, escluso) VALUES (?, ?, ?)
                ON CONFLICT(codice) DO UPDATE SET descrizione = excluded.descrizione
                WHERE excluded.descrizione != ''""",
-            (codice, descrizione),
+            (codice, descrizione, 1 if _escluso_di_default(codice) else 0),
         )
     nuovi = aggiornati = 0
     for r in righe:
@@ -1112,8 +1148,10 @@ def trova_punto_vendita(conn: sqlite3.Connection, riferimento: str) -> sqlite3.R
 
 
 def imposta_esclusione(conn: sqlite3.Connection, codice: str, escluso: bool) -> None:
+    """Scelta manuale dalla scheda Punti vendita: da qui in poi la politica di
+    default (_escluso_di_default) non tocca più questo codice."""
     conn.execute(
-        "UPDATE punti_vendita SET escluso = ? WHERE codice = ?",
+        "UPDATE punti_vendita SET escluso = ?, escluso_manuale = 1 WHERE codice = ?",
         (1 if escluso else 0, codice),
     )
     conn.commit()
