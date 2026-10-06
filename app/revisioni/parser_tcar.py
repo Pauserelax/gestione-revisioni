@@ -52,9 +52,36 @@ def _data(riga: dict, colonna: str) -> date | None:
 
 
 def leggi_export_lead(percorso: Path) -> list[LeadTcar]:
+    if Path(percorso).suffix.lower() == ".xls":
+        return _leggi_lead(_righe_xls(percorso))
     wb = openpyxl.load_workbook(percorso, data_only=True, read_only=True)
-    ws = wb.worksheets[0]
-    righe = ws.iter_rows(values_only=True)
+    try:
+        return _leggi_lead(wb.worksheets[0].iter_rows(values_only=True))
+    finally:
+        wb.close()
+
+
+def _righe_xls(percorso: Path):
+    import xlrd
+    wb = xlrd.open_workbook(str(percorso))
+    ws = wb.sheet_by_index(0)
+    for r in range(ws.nrows):
+        valori = []
+        for c in range(ws.ncols):
+            v = ws.cell_value(r, c)
+            if ws.cell_type(r, c) == xlrd.XL_CELL_DATE:
+                try:
+                    v = xlrd.xldate_as_datetime(v, wb.datemode)
+                except Exception:
+                    pass
+            elif ws.cell_type(r, c) == xlrd.XL_CELL_EMPTY or v == "":
+                v = None
+            valori.append(v)
+        yield tuple(valori)
+
+
+def _leggi_lead(righe) -> list[LeadTcar]:
+    righe = iter(righe)
     intestazioni = [str(c).strip() if c is not None else "" for c in next(righe)]
 
     leads: list[LeadTcar] = []
@@ -73,7 +100,7 @@ def leggi_export_lead(percorso: Path) -> list[LeadTcar]:
             if t and t not in telefoni:
                 telefoni.append(t)
         leads.append(LeadTcar(
-            tcar_id=int(r["ID"]),
+            tcar_id=int(float(r["ID"])),
             codice_cm=_testo(r, "Codice C.M."),
             marca=_testo(r, "Marca"),
             tipologia=_testo(r, "Tipologia"),
@@ -91,5 +118,4 @@ def leggi_export_lead(percorso: Path) -> list[LeadTcar]:
             modello=_testo(r, "VP - Modello"),
             data_immatricolazione=_data(r, "VP - Data Imm."),
         ))
-    wb.close()
     return leads
