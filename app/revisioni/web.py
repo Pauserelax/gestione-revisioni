@@ -595,7 +595,12 @@ document.getElementById('cerca-cliente').addEventListener('input', e => {
           ${v.scadenza ? '— revisione entro <b>' + v.scadenza + '</b>' : (v.archiviato ? '<span class="muted">(archiviato)</span>' : (v.attivo ? '' : '<span class="muted">(dismesso)</span>'))}
           ${v.eventi.map(ev => '<div class="muted" style="margin-left:22px">• ' + esc(ev) + '</div>').join('')}
         </div>`).join('')}
-      </div>`).join('') || '<div class="muted">Nessun risultato.</div>';
+      </div>`).join('') + (r.lead.length ? '<h4 style="margin:14px 0 6px">🎯 Lead Tcar non nei nostri veicoli</h4>' + r.lead.map(l => `
+      <div class="cliente-card">
+        <b>${esc(l.nome)}</b> <span class="muted">${esc(l.telefoni)} ${esc(l.email)}</span>
+        <div style="margin:6px 0 0 10px">🎯 ${esc((l.marca + ' ' + l.modello).trim())} ${esc(l.targa)} <span class="muted">${esc(l.telaio)}</span>
+          <div class="muted" style="margin-left:22px">• ${esc(l.campagna)} — ${esc(l.stato)} ${l.creazione ? '(' + esc(l.creazione) + ')' : ''}</div></div>
+      </div>`).join('') : '') || '<div class="muted">Nessun risultato.</div>';
   }, 300);
 });
 
@@ -965,7 +970,8 @@ def crea_handler(percorso_db: Path):
                         _json(self, database.statistiche_dekra(conn))
                     elif url.path == "/api/cerca":
                         q = parse_qs(url.query).get("q", [""])[0].strip()
-                        _json(self, {"clienti": self._cerca(conn, q, scadenze_cache(True))})
+                        _json(self, {"clienti": self._cerca(conn, q, scadenze_cache(True)),
+                                     "lead": self._cerca_lead(conn, q)})
                     elif url.path == "/api/invii-config":
                         cfg = invii.leggi_config(config_invii)
                         _json(self, invii.stato(cfg))
@@ -1257,6 +1263,27 @@ def crea_handler(percorso_db: Path):
             if s and s.scadenza:
                 msg += f" Prossima revisione entro il {s.scadenza.strftime('%d/%m/%Y')}."
             _json(self, {"ok": True, "messaggio": msg})
+
+        @staticmethod
+        def _cerca_lead(conn, q):
+            """Lead Tcar non agganciati a veicoli nostri: non hanno una scheda
+            cliente, quindi la ricerca normale non li può trovare."""
+            filtro = f"%{q}%"
+            righe = conn.execute(
+                """SELECT * FROM lead_tcar
+                   WHERE veicolo_id IS NULL
+                     AND (IFNULL(cognome,'') || ' ' || IFNULL(nome,'') LIKE ?
+                          OR IFNULL(nome,'') || ' ' || IFNULL(cognome,'') LIKE ?
+                          OR telefoni LIKE ? OR email LIKE ? OR targa LIKE ? OR telaio LIKE ?)
+                   ORDER BY creazione DESC LIMIT 30""",
+                (filtro,) * 6,
+            ).fetchall()
+            return [{"nome": f"{r['cognome'] or ''} {r['nome'] or ''}".strip(),
+                     "telefoni": r["telefoni"] or "", "email": r["email"] or "",
+                     "marca": r["marca"] or "", "modello": r["modello"] or "",
+                     "targa": r["targa"] or "", "telaio": r["telaio"] or "",
+                     "campagna": r["campagna"] or "", "stato": r["stato"] or "",
+                     "creazione": (r["creazione"] or "")[:10]} for r in righe]
 
         @staticmethod
         def _cerca(conn, q, scadenze_tutte):
