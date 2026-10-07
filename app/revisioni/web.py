@@ -161,7 +161,8 @@ PAGINA = """<!DOCTYPE html>
       <button data-f="DATI">📇 Dati mancanti</button>
       <button data-f="LEAD">🎯 Con lead Tcar</button>
       <label style="font-size:13px">📅 Vai al mese: <input type="month" id="mese-futuro"></label>
-      <input type="search" id="cerca-chiamate" placeholder="Filtra per nome, targa, telaio…">
+      <input type="search" id="cerca-chiamate" placeholder="Filtra questa lista per nome, targa, telaio…">
+      <span id="avviso-ricerca" class="muted" style="display:none;font-size:12px">cerca solo nella lista qui sotto — per trovare un cliente in tutto l'archivio usa <a href="#" onclick="document.querySelector('[data-tab=cerca]').click();return false">🔍 Cerca cliente</a></span>
       <span id="strumenti-sms" style="display:none">
         <button onclick="scaricaSms(false)">⬇️ Scarica lista SMS (smscafè)</button>
         <button onclick="segnaSms(false)">✔️ Segna tutti come inviati</button>
@@ -457,6 +458,7 @@ function mostraChiamate() {
     FILTRO === 'DATI' ? c.fase === 'DATI_MANCANTI' :
     c.fase === FILTRO);
   if (q) sel = sel.filter(c => (c.cliente + c.targa + c.telaio + c.telefono).toLowerCase().includes(q));
+  document.getElementById('avviso-ricerca').style.display = q ? '' : 'none';
   const clientiUnici = new Set(sel.map(c => c.cliente)).size;
   document.getElementById('note-conteggio').textContent =
     (MESE ? 'Scadenze di ' + MESE + ': ' : '') + sel.length + ' veicoli di ' + clientiUnici + ' clienti' +
@@ -658,7 +660,7 @@ document.getElementById('cerca-cliente').addEventListener('input', e => {
     const q = e.target.value.trim();
     if (q.length < 3) { document.getElementById('risultati-cerca').innerHTML = ''; return; }
     const r = await api('/api/cerca?q=' + encodeURIComponent(q));
-    document.getElementById('risultati-cerca').innerHTML = r.clienti.map(c => `
+    document.getElementById('risultati-cerca').innerHTML = (r.troncato ? '<div class="muted" style="margin-bottom:8px">⚠ Troppi risultati: mostro i primi 150. Aggiungi il nome, la targa o il telefono per restringere.</div>' : '') + r.clienti.map(c => `
       <div class="cliente-card">
         <b>${esc(c.nome)}</b> <span class="muted">${esc(c.telefono)} ${esc(c.email)}</span>
         ${c.veicoli.map(v => `<div style="margin:6px 0 0 10px">
@@ -757,6 +759,7 @@ def _json(handler: BaseHTTPRequestHandler, dati, codice=200):
     handler.send_response(codice)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(corpo)))
+    handler.send_header("Cache-Control", "no-store")
     handler.end_headers()
     handler.wfile.write(corpo)
 
@@ -1041,7 +1044,8 @@ def crea_handler(percorso_db: Path):
                         _json(self, database.statistiche_dekra(conn))
                     elif url.path == "/api/cerca":
                         q = parse_qs(url.query).get("q", [""])[0].strip()
-                        _json(self, {"clienti": self._cerca(conn, q, scadenze_cache(True)),
+                        clienti, troncato = self._cerca(conn, q, scadenze_cache(True))
+                        _json(self, {"clienti": clienti, "troncato": troncato,
                                      "lead": self._cerca_lead(conn, q)})
                     elif url.path == "/api/invii-config":
                         cfg = invii.leggi_config(config_invii)
@@ -1414,17 +1418,27 @@ def crea_handler(percorso_db: Path):
 
         @staticmethod
         def _cerca(conn, q, scadenze_tutte):
-            filtro = f"%{q}%"
+            # Tollerante: le parole del nome in qualsiasi ordine ("mario rossi" trova
+            # "ROSSI MARIO"); targa, telaio e telefono anche scritti con spazi o trattini.
+            parole = q.split()
+            compatto = "".join(ch for ch in q if ch not in " -./")
+            nome_ok = " AND ".join("c.nome LIKE ?" for _ in parole) or "0"
+            def senza(col):
+                return f"REPLACE(REPLACE(REPLACE(REPLACE(IFNULL({col},''), ' ', ''), '-', ''), '.', ''), '/', '')"
             clienti = conn.execute(
-                """SELECT DISTINCT c.* FROM clienti c
+                f"""SELECT DISTINCT c.* FROM clienti c
                    LEFT JOIN veicoli v ON v.cliente_id = c.id
-                   WHERE c.nome LIKE ? OR c.telefono LIKE ? OR v.targa LIKE ? OR v.telaio LIKE ?
-                   ORDER BY c.nome LIMIT 30""",
-                (filtro, filtro, filtro, filtro),
+                   WHERE ({nome_ok}) OR c.telefono LIKE ? OR v.targa LIKE ? OR v.telaio LIKE ?
+                      OR (? != '' AND ({senza('c.telefono')} LIKE ? OR {senza('v.targa')} LIKE ?
+                                       OR {senza('v.telaio')} LIKE ?))
+                   ORDER BY c.nome LIMIT 151""",
+                (*[f"%{w}%" for w in parole], f"%{q}%", f"%{q}%", f"%{q}%",
+                 compatto, f"%{compatto}%", f"%{compatto}%", f"%{compatto}%"),
             ).fetchall()
             scadenze = {s.veicolo_id: s for s in scadenze_tutte}
             out = []
-            for c in clienti:
+            troncato = len(clienti) > 150
+            for c in clienti[:150]:
                 veicoli = []
                 for v in conn.execute(
                     "SELECT * FROM veicoli WHERE cliente_id = ? ORDER BY IFNULL(data_immatricolazione,'') DESC",
@@ -1450,7 +1464,7 @@ def crea_handler(percorso_db: Path):
                     })
                 out.append({"nome": c["nome"], "telefono": c["telefono"] or "",
                             "email": c["email"] or "", "veicoli": veicoli})
-            return out
+            return out, troncato
 
     return Handler
 
