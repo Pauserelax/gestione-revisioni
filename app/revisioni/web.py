@@ -36,6 +36,17 @@ PAGINA = """<!DOCTYPE html>
   nav { background: #fff; padding: 0 20px; border-bottom: 1px solid #ddd; display: flex; gap: 4px; }
   nav button { border: none; background: none; padding: 12px 16px; font-size: 14px; cursor: pointer; border-bottom: 3px solid transparent; }
   nav button.attivo { border-bottom-color: #23395d; font-weight: 600; }
+  #btn-nuovo { border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; background: #2e9d5b; color: #fff; font-weight: 700; font-size: 15px; margin-right: 8px; }
+  dialog#dlg-nuovo { border: none; border-radius: 12px; padding: 20px 24px; width: min(520px, 94vw); box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  dialog#dlg-nuovo::backdrop { background: rgba(0,0,0,.4); }
+  dialog#dlg-nuovo h3 { margin: 0 0 12px; }
+  dialog#dlg-nuovo label { display: block; font-size: 12px; color: #555; margin-top: 10px; }
+  dialog#dlg-nuovo input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+  dialog#dlg-nuovo .riga { display: flex; gap: 10px; }
+  dialog#dlg-nuovo .riga > div { flex: 1; }
+  dialog#dlg-nuovo fieldset { border: 1px solid #ddd; border-radius: 8px; margin: 12px 0 0; padding: 4px 12px 12px; }
+  dialog#dlg-nuovo legend { font-size: 12px; font-weight: 600; color: #23395d; padding: 0 6px; }
+  #nuovo-esito { margin-top: 10px; font-size: 13px; min-height: 18px; }
   main { padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
   .filtri { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
   .filtri button { border: 1px solid #ccc; background: #fff; border-radius: 14px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
@@ -93,6 +104,7 @@ PAGINA = """<!DOCTYPE html>
   <span class="chip">🔄 Da recuperare <b id="k-recupero">–</b></span>
   <span class="chip">🎯 Lead Tcar <b id="k-lead">–</b></span>
   <span style="margin-left:auto">
+    <button id="btn-nuovo" title="Inserisci un nuovo cliente con il suo veicolo" onclick="apriNuovoCliente()">＋ Nuovo cliente</button>
     <button id="btn-aggiorna" style="border:none;border-radius:8px;padding:8px 14px;cursor:pointer;background:#e8b400;color:#1c1e21;font-weight:600" onclick="document.getElementById('file-aggiorna').click()">⬆️ Aggiorna dati</button>
     <input type="file" id="file-aggiorna" multiple accept=".xlsx,.xls,.pdf" style="display:none">
   </span>
@@ -106,6 +118,38 @@ PAGINA = """<!DOCTYPE html>
   <button data-tab="filtri">⚙️ Filtri</button>
   <button data-tab="aiuto">❓ Legenda</button>
 </nav>
+<dialog id="dlg-nuovo">
+  <form method="dialog" onsubmit="return false">
+    <h3>＋ Nuovo cliente revisione</h3>
+    <fieldset><legend>Cliente</legend>
+      <label>Nome e cognome (o ragione sociale) *</label><input id="nc-nome" autocomplete="off">
+      <div class="riga">
+        <div><label>Telefono</label><input id="nc-tel" type="tel" autocomplete="off"></div>
+        <div><label>Email</label><input id="nc-email" type="email" autocomplete="off"></div>
+      </div>
+    </fieldset>
+    <fieldset><legend>Veicolo</legend>
+      <div class="riga">
+        <div><label>Targa *</label><input id="nc-targa" autocomplete="off" style="text-transform:uppercase"></div>
+        <div><label>Telaio (facoltativo)</label><input id="nc-telaio" autocomplete="off" style="text-transform:uppercase"></div>
+      </div>
+      <div class="riga">
+        <div><label>Marca</label><input id="nc-marca" autocomplete="off"></div>
+        <div><label>Modello</label><input id="nc-modello" autocomplete="off"></div>
+      </div>
+      <div class="riga">
+        <div><label>Data immatricolazione</label><input id="nc-imm" type="date"></div>
+        <div><label>Data ultima revisione</label><input id="nc-rev" type="date"></div>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:6px">* Serve almeno una delle due date: la prossima scadenza si calcola da lì.</div>
+    </fieldset>
+    <div id="nuovo-esito"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button type="button" onclick="document.getElementById('dlg-nuovo').close()">Annulla</button>
+      <button type="button" id="nc-salva" style="background:#2e9d5b;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer" onclick="salvaNuovoCliente(false)">Salva</button>
+    </div>
+  </form>
+</dialog>
 <main>
   <section id="tab-chiamate">
     <div class="filtri">
@@ -517,6 +561,33 @@ async function nuovoVeicolo(clienteId, nome) {
   const rev = imm ? '' : (prompt('Data ultima revisione (AAAA-MM-GG):', '') ?? '');
   const r = await api('/api/nuovo-veicolo', {cliente_id: clienteId, targa, marca, modello, imm, ultima_revisione: rev});
   alert(r.messaggio || r.errore || 'Fatto.');
+  caricaRecupero(); carica();
+}
+
+const CAMPI_NUOVO = ['nome','tel','email','targa','telaio','marca','modello','imm','rev'];
+function apriNuovoCliente() {
+  CAMPI_NUOVO.forEach(k => document.getElementById('nc-' + k).value = '');
+  document.getElementById('nuovo-esito').textContent = '';
+  document.getElementById('nc-salva').textContent = 'Salva';
+  document.getElementById('dlg-nuovo').showModal();
+  document.getElementById('nc-nome').focus();
+}
+async function salvaNuovoCliente(forza) {
+  const v = k => document.getElementById('nc-' + k).value.trim();
+  const esito = document.getElementById('nuovo-esito');
+  const r = await api('/api/nuovo-cliente', {
+    nome: v('nome'), telefono: v('tel'), email: v('email'), targa: v('targa'), telaio: v('telaio'),
+    marca: v('marca'), modello: v('modello'), imm: v('imm'), ultima_revisione: v('rev'), forza});
+  if (r.avvertenza) {
+    esito.style.color = '#b45f06'; esito.textContent = '⚠ ' + r.avvertenza;
+    document.getElementById('nc-salva').textContent = 'Salva comunque';
+    document.getElementById('nc-salva').onclick = () => salvaNuovoCliente(true);
+    return;
+  }
+  if (!r.ok) { esito.style.color = '#c00'; esito.textContent = r.errore || 'Errore.'; return; }
+  document.getElementById('nc-salva').onclick = () => salvaNuovoCliente(false);
+  document.getElementById('dlg-nuovo').close();
+  alert(r.messaggio);
   caricaRecupero(); carica();
 }
 
@@ -997,6 +1068,8 @@ def crea_handler(percorso_db: Path):
                 try:
                     if self.path == "/api/esito":
                         self._esito(conn, dati)
+                    elif self.path == "/api/nuovo-cliente":
+                        self._nuovo_cliente(conn, dati)
                     elif self.path == "/api/nuovo-veicolo":
                         self._nuovo_veicolo(conn, dati)
                     elif self.path == "/api/pv":
@@ -1242,6 +1315,60 @@ def crea_handler(percorso_db: Path):
             conn.commit()
             invalida()
             _json(self, {"ok": True})
+
+        def _nuovo_cliente(self, conn, dati):
+            from .telefoni import valuta_campo
+            nome = " ".join((dati.get("nome") or "").split()).upper()
+            targa = (dati.get("targa") or "").strip().upper().replace(" ", "")
+            telaio = (dati.get("telaio") or "").strip().upper().replace(" ", "")
+            imm = dati.get("imm") or ""
+            rev = dati.get("ultima_revisione") or ""
+            email = (dati.get("email") or "").strip()
+            if not nome:
+                return _json(self, {"errore": "il nome è obbligatorio"}, 400)
+            if not targa:
+                return _json(self, {"errore": "la targa è obbligatoria"}, 400)
+            if not imm and not rev:
+                return _json(self, {"errore": "serve la data di immatricolazione o dell'ultima revisione"}, 400)
+            if email and "@" not in email:
+                return _json(self, {"errore": "l'email non sembra valida"}, 400)
+            try:
+                data_imm = date.fromisoformat(imm) if imm else None
+                data_rev = date.fromisoformat(rev) if rev else None
+            except ValueError:
+                return _json(self, {"errore": "data non valida"}, 400)
+            # Veicolo già presente? Meglio non creare doppioni.
+            gia = None
+            if telaio:
+                gia = conn.execute("SELECT v.id, c.nome FROM veicoli v JOIN clienti c ON c.id = v.cliente_id WHERE v.telaio = ?", (telaio,)).fetchone()
+            if gia is None:
+                gia = conn.execute("SELECT v.id, c.nome FROM veicoli v JOIN clienti c ON c.id = v.cliente_id WHERE v.targa = ? AND v.attivo = 1 AND IFNULL(v.archiviato,0) = 0", (targa,)).fetchone()
+            if gia:
+                return _json(self, {"errore": f"Questo veicolo è già in archivio, intestato a {gia['nome']}: cercalo in 'Cerca cliente'."}, 409)
+            telefono = None
+            if (dati.get("telefono") or "").strip():
+                stato, numero, motivo = valuta_campo(dati["telefono"])
+                if stato not in ("cellulare", "fisso") and not dati.get("forza"):
+                    return _json(self, {"avvertenza": f"Il numero sembra anomalo ({stato.replace('_', ' ')}" + (f": {motivo}" if motivo else "") + ")."})
+                telefono = numero if stato in ("cellulare", "fisso") else dati["telefono"].strip()
+            omonimo = conn.execute("SELECT COUNT(*) AS n FROM clienti WHERE nome = ?", (nome,)).fetchone()["n"]
+            if omonimo and not dati.get("forza"):
+                return _json(self, {"avvertenza": f"Esiste già un cliente con nome {nome}: se è la stessa persona, aggiungi l'auto dalla sua scheda. Se è un omonimo, salva comunque."})
+            cliente_id = conn.execute(
+                "INSERT INTO clienti (nome, telefono, email) VALUES (?, ?, ?)",
+                (nome, telefono, email or None)).lastrowid
+            conn.commit()
+            veicolo_id = database.inserisci_veicolo_manuale(
+                conn, cliente_id, targa, telaio or None,
+                (dati.get("marca") or "").strip().upper(), (dati.get("modello") or "").strip().upper(), data_imm)
+            if data_rev:
+                database.registra_revisione(conn, veicolo_id, data_rev, fonte="dichiarata dal cliente")
+            invalida()
+            s = next((x for x in scadenze_cache(True) if x.veicolo_id == veicolo_id), None)
+            msg = f"Cliente {nome} registrato."
+            if s and s.scadenza:
+                msg += f" Prossima revisione entro il {s.scadenza.strftime('%d/%m/%Y')}."
+            _json(self, {"ok": True, "messaggio": msg})
 
         def _nuovo_veicolo(self, conn, dati):
             targa = (dati.get("targa") or "").strip().upper().replace(" ", "")
